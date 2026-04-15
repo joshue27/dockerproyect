@@ -1,0 +1,84 @@
+﻿<%- include('../partials/header') %>
+
+<section class="auth-shell auth-shell-centered">
+  <section class="auth-card auth-card-refined">
+    <div class="auth-card-panel auth-card-panel-refined">
+      <span class="hero-kicker">Acceso seguro</span>
+      <h2>Controlá la operación desde un solo lugar</h2>
+      <p>Ingresá al panel central para supervisar inventario, ventas, atención al cliente y finanzas con una experiencia clara, profesional y consistente.</p>
+
+      <div class="auth-feature-list">
+        <article class="auth-feature-item">
+          <span class="auth-feature-icon">🛒</span>
+          <div>
+            <strong>Ventas integradas</strong>
+            <p>Operaciones conectadas con stock y movimientos financieros.</p>
+          </div>
+        </article>
+        <article class="auth-feature-item">
+          <span class="auth-feature-icon">📦</span>
+          <div>
+            <strong>Inventario centralizado</strong>
+            <p>Control de productos, existencias y alertas de stock bajo.</p>
+          </div>
+        </article>
+        <article class="auth-feature-item">
+          <span class="auth-feature-icon">💬</span>
+          <div>
+            <strong>Seguimiento al cliente</strong>
+            <p>Solicitudes, reclamos y estados de atención en un solo lugar.</p>
+          </div>
+        </article>
+      </div>
+
+      <section class="auth-support-card">
+        <span class="auth-support-label">Diseñado para operación diaria</span>
+        <ul class="auth-support-list">
+          <li>Visibilidad rápida de métricas clave</li>
+          <li>Navegación optimizada para desktop y mobile</li>
+          <li>Flujos simples para tareas frecuentes</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="card auth-form-card auth-form-card-refined">
+      <div class="auth-form-header">
+        <h3>Iniciar sesión</h3>
+        <p>Acceso restringido al personal autorizado de la empresa.</p>
+      </div>
+
+      <% if (error) { %>
+        <section class="status warn">
+          <strong>Ups:</strong>
+          <span><%= error %></span>
+        </section>
+      <% } %>
+
+      <form class="form" method="POST" action="/login">
+        <div class="auth-form-intro">
+          <span class="auth-form-icon">🔐</span>
+          <div>
+            <strong>Área protegida</strong>
+            <p>Tus credenciales habilitan el acceso a los módulos operativos del sistema.</p>
+          </div>
+        </div>
+
+        <div class="form-grid auth-grid">
+          <label class="full-width">
+            Usuario
+            <input type="text" name="username" value="<%= formData.username %>" autocomplete="username" required>
+          </label>
+
+          <label class="full-width">
+            Contraseña
+            <input type="password" name="password" value="<%= formData.password %>" autocomplete="current-password" required>
+          </label>
+        </div>
+
+        <button class="button auth-submit" type="submit"><span class="button-icon">🔐</span><span>Ingresar al sistema</span></button>
+      </form>
+    </div>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

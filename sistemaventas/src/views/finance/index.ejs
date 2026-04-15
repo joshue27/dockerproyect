@@ -1,0 +1,97 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1>Finanzas</h1>
+      <p>Resumen financiero simple con ingresos de ventas y egresos manuales.</p>
+    </div>
+    <div class="page-actions">
+      <a class="button" href="/finanzas/egresos/nuevo"><span class="button-icon">＋</span><span>Registrar egreso</span></a>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <% if (message) { %>
+      <section class="status ok">
+        <strong>Listo:</strong>
+        <span><%= message %></span>
+      </section>
+    <% } %>
+
+    <section class="grid">
+      <article class="card metric-card">
+        <div class="metric-label">Ingresos</div>
+        <p class="metric-value">Q <%= Number(summary.total_income).toFixed(2) %></p>
+        <div class="metric-hint">Entradas generadas por ventas.</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Egresos</div>
+        <p class="metric-value">Q <%= Number(summary.total_expense).toFixed(2) %></p>
+        <div class="metric-hint">Gastos registrados manualmente.</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Balance</div>
+        <p class="metric-value <%= Number(summary.balance) < 0 ? 'text-danger' : '' %>">Q <%= Number(summary.balance).toFixed(2) %></p>
+        <div class="metric-hint">Resultado neto del flujo actual.</div>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="panel-header">
+        <div>
+          <h3>Movimientos financieros</h3>
+          <p>Trazabilidad de ingresos automáticos y egresos manuales.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Concepto</th>
+              <th>Monto</th>
+              <th>Referencia</th>
+              <th>Registrado por</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (movements.length === 0) { %>
+              <tr>
+                <td colspan="6">Todavía no hay movimientos financieros registrados.</td>
+              </tr>
+            <% } %>
+            <% movements.forEach(movement => { %>
+              <tr>
+                <td><span class="badge <%= movement.movement_type === 'expense' ? 'badge-expense' : 'badge-income' %>"><%= movement.movement_type %></span></td>
+                <td><%= movement.concept %></td>
+                <td>Q <%= Number(movement.amount).toFixed(2) %></td>
+                <td>
+                  <% if (movement.reference_table && movement.reference_id) { %>
+                    <%= movement.reference_table %>#<%= movement.reference_id %>
+                  <% } else { %>
+                    Manual
+                  <% } %>
+                </td>
+                <td><%= movement.created_by_name %></td>
+                <td><%= new Date(movement.created_at).toLocaleString('es-GT') %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Qué estás aprendiendo acá</h3>
+      <ul class="info-list">
+        <li>Finanzas no nace aislado: reutiliza los ingresos que ya genera ventas.</li>
+        <li>Un módulo financiero mínimo puede empezar con ingresos, egresos y balance.</li>
+        <li>No hace falta construir contabilidad completa para demostrar integración funcional.</li>
+      </ul>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

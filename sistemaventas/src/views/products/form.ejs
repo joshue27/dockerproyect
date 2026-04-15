@@ -1,0 +1,81 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1><%= formTitle %></h1>
+      <p>Formulario base para crear o editar productos del inventario con validación del lado del servidor.</p>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <% if (errors.length > 0) { %>
+      <section class="status warn">
+        <strong>Corregí estos puntos:</strong>
+        <ul class="info-list">
+          <% errors.forEach(error => { %>
+            <li><%= error %></li>
+          <% }) %>
+        </ul>
+      </section>
+    <% } %>
+
+    <section class="card">
+      <form class="form" method="POST" action="<%= formAction %>">
+        <div class="form-grid">
+          <label>
+            SKU
+            <input type="text" name="sku" value="<%= product.sku %>" required>
+          </label>
+
+          <label>
+            Nombre
+            <input type="text" name="name" value="<%= product.name %>" required>
+          </label>
+
+          <label class="full-width">
+            Descripción
+            <textarea name="description" rows="4"><%= product.description %></textarea>
+          </label>
+
+          <label>
+            Precio
+            <input type="number" step="0.01" min="0" name="price" value="<%= product.price %>" required>
+          </label>
+
+          <label>
+            Stock
+            <input type="number" step="1" min="0" name="stock" value="<%= product.stock %>" required>
+          </label>
+
+          <label>
+            Stock mínimo
+            <input type="number" step="1" min="0" name="minStock" value="<%= product.minStock %>" required>
+          </label>
+
+          <label class="checkbox-field">
+            <input type="checkbox" name="active" <%= product.active ? 'checked' : '' %>>
+            Activo
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <a class="button button-secondary button-sm" href="/productos"><span class="button-icon">←</span><span>Cancelar</span></a>
+          <button class="button button-sm" type="submit"><span class="button-icon">✔</span><span><%= submitLabel %></span></button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h3>Qué estás aprendiendo acá</h3>
+      <ul class="info-list">
+        <li>El formulario envía datos con <strong>POST</strong>.</li>
+        <li>El controlador valida antes de tocar la base.</li>
+        <li>El repositorio encapsula el <strong>INSERT</strong> y el <strong>UPDATE</strong>.</li>
+        <li>La vista solo muestra datos y errores, no ejecuta reglas de negocio.</li>
+      </ul>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

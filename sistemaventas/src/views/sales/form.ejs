@@ -1,0 +1,82 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1>Nueva venta</h1>
+      <p>Formulario mínimo para registrar una venta y descontar inventario sin perder consistencia.</p>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <% if (errors.length > 0) { %>
+      <section class="status warn">
+        <strong>Corregí estos puntos:</strong>
+        <ul class="info-list">
+          <% errors.forEach(error => { %>
+            <li><%= error %></li>
+          <% }) %>
+        </ul>
+      </section>
+    <% } %>
+
+    <section class="card">
+      <form class="form" method="POST" action="/ventas">
+        <div class="form-grid">
+          <label class="full-width">
+            Nombre del cliente
+            <input type="text" name="customerName" value="<%= formData.customerName %>" placeholder="Consumidor final">
+          </label>
+
+          <label>
+            Descuento
+            <input type="number" min="0" step="0.01" name="discount" value="<%= formData.discount %>">
+          </label>
+        </div>
+
+        <h3>Productos disponibles</h3>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Precio</th>
+                <th>Stock</th>
+                <th>Cantidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% products.forEach(product => { %>
+                <tr>
+                  <td><%= product.name %></td>
+                  <td>Q <%= Number(product.price).toFixed(2) %></td>
+                  <td><%= product.stock %></td>
+                  <td>
+                    <input type="number" min="0" max="<%= product.stock %>" step="1" name="quantity_<%= product.id %>" value="<%= formData.quantities[product.id] || 0 %>">
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="form-actions">
+          <a class="button button-secondary button-sm" href="/ventas"><span class="button-icon">←</span><span>Cancelar</span></a>
+          <button class="button button-sm" type="submit"><span class="button-icon">✔</span><span>Registrar venta</span></button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h3>Qué estás aprendiendo acá</h3>
+      <ul class="info-list">
+        <li>El total final se valida en el servidor.</li>
+        <li>La venta impacta inventario y finanzas dentro de una misma transacción.</li>
+        <li>Las cantidades no pueden superar el stock disponible.</li>
+      </ul>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

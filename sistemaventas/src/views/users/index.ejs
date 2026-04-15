@@ -1,0 +1,93 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1>Usuarios</h1>
+      <p>Administración mínima de cuentas internas para operar el sistema con roles diferenciados.</p>
+    </div>
+    <div class="page-actions">
+      <a class="button" href="/usuarios/nuevo"><span class="button-icon">＋</span><span>Nuevo usuario</span></a>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <% if (message) { %>
+      <section class="status ok">
+        <strong>Listo:</strong>
+        <span><%= message %></span>
+      </section>
+    <% } %>
+
+    <section class="card">
+      <div class="panel-header">
+        <div>
+          <h3>Usuarios registrados</h3>
+          <p>Solo el perfil administrador puede crear, editar o cambiar el estado de estas cuentas.</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              <th>Nombre</th>
+              <th>Correo</th>
+              <th>Rol</th>
+              <th>Estado</th>
+              <th>Creado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (users.length === 0) { %>
+              <tr>
+                <td colspan="7">No hay usuarios registrados.</td>
+              </tr>
+            <% } %>
+            <% users.forEach(user => { %>
+              <tr>
+                <td><strong><%= user.username %></strong></td>
+                <td><%= user.full_name %></td>
+                <td><%= user.email || '—' %></td>
+                <td><span class="badge"><%= user.role_name %></span></td>
+                <td>
+                  <span class="badge <%= user.is_active ? '' : 'badge-expense' %>">
+                    <%= user.is_active ? 'Activo' : 'Inactivo' %>
+                  </span>
+                </td>
+                <td><%= new Date(user.created_at).toLocaleDateString('es-GT') %></td>
+                <td class="actions-cell">
+                  <a class="button button-secondary button-sm" href="/usuarios/<%= user.id %>/editar"><span class="button-icon">✎</span><span>Editar</span></a>
+                  <% if (user.id !== currentUserId) { %>
+                    <form method="POST" action="/usuarios/<%= user.id %>/toggle-active" class="inline-form">
+                      <button type="submit" class="button <%= user.is_active ? 'button-soft' : 'button-ghost' %> button-sm">
+                        <span class="button-icon"><%= user.is_active ? '⏸' : '▶' %></span>
+                        <span><%= user.is_active ? 'Desactivar' : 'Activar' %></span>
+                      </button>
+                    </form>
+                  <% } else { %>
+                    <span class="muted">Sesión actual</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Qué cubre este módulo</h3>
+      <ul class="info-list">
+        <li>Alta y edición básica de cuentas internas.</li>
+        <li>Asignación de rol operativo: admin, vendedor o bodega.</li>
+        <li>Activación y desactivación lógica sin borrar registros.</li>
+        <li>Restricción administrativa para cuidar la seguridad mínima del sistema.</li>
+      </ul>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

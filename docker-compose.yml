@@ -1,0 +1,325 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app1:
+        condition: service_healthy
+      app2:
+        condition: service_healthy
+      grafana:
+        condition: service_started
+    ports:
+      - "${APP_PORT:-8080}:80"
+      - "${GRAFANA_PORT:-8081}:81"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - edge_net
+      - app_net
+      - admin_net
+      - observability_net
+
+  app1:
+    build:
+      context: ./sistemaventas
+    image: sistemaventas-app:local
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres-primary:
+        condition: service_healthy
+    environment:
+      APP_NAME: Sistema Ventas
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres-primary:5432/${POSTGRES_DB:-sistemaventas}"
+      SESSION_SECRET: ${SESSION_SECRET:-demo-session-secret}
+      REDIS_URL: "redis://redis:6379"
+      SESSION_PREFIX: "sistemaventas:sess:"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - app_net
+      - data_net
+
+  app2:
+    image: sistemaventas-app:local
+    build:
+      context: ./sistemaventas
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres-primary:
+        condition: service_healthy
+    environment:
+      APP_NAME: Sistema Ventas
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres-primary:5432/${POSTGRES_DB:-sistemaventas}"
+      SESSION_SECRET: ${SESSION_SECRET:-demo-session-secret}
+      REDIS_URL: "redis://redis:6379"
+      SESSION_PREFIX: "sistemaventas:sess:"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - app_net
+      - data_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app_net
+      - observability_net
+
+  samba-ad-dc:
+    image: linuxcrafts/samba-ad-dc:latest
+    hostname: ${SAMBA_NETBIOS_NAME:-DC01}
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      DNS_DOMAIN: ${SAMBA_DOMAIN:-proyecto.local}
+      DNS_FORWARDER: ${SAMBA_DNS_FORWARDER:-1.1.1.1}
+      WORKGROUP: ${SAMBA_WORKGROUP:-PROYECTO}
+      REALM: ${SAMBA_REALM:-PROYECTO.LOCAL}
+      NETBIOS_NAME: ${SAMBA_NETBIOS_NAME:-DC01}
+      ADMIN_PASSWORD: ${SAMBA_ADMIN_PASSWORD:-Admin123!}
+      DNS_BACKEND: SAMBA_INTERNAL
+      FUNCTION_LEVEL: 2008_R2
+    volumes:
+      - samba_data:/samba
+      - samba_users:/users
+    networks:
+      - edge_net
+      - identity_net
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "88:88/tcp"
+      - "88:88/udp"
+      - "135:135/tcp"
+      - "389:389/tcp"
+      - "389:389/udp"
+      - "445:445/tcp"
+      - "464:464/tcp"
+      - "464:464/udp"
+      - "123:123/udp"
+      - "636:636/tcp"
+      - "3268:3268/tcp"
+      - "3269:3269/tcp"
+      - "50000-50050:50000-50050/tcp"
+
+  postgres-primary:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sistemaventas}
+      REPLICATION_USER: ${REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator123}
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./sistemaventas/database/init/01_minimo_bebidas_abarrotes.sql:/docker-entrypoint-initdb.d/01_minimo_bebidas_abarrotes.sql:ro
+      - ./database/postgres/primary/init/02_replication_user.sh:/docker-entrypoint-initdb.d/02_replication_user.sh:ro
+      - ./database/postgres/primary/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sistemaventas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - data_net
+      - observability_net
+
+  postgres-replica:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sistemaventas}
+      REPLICATION_USER: ${REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator123}
+      PRIMARY_HOST: postgres-primary
+      PRIMARY_PORT: 5432
+    entrypoint: ["/bin/sh", "/scripts/replica-entrypoint.sh"]
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./database/postgres/replica/replica-entrypoint.sh:/scripts/replica-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sistemaventas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - data_net
+      - observability_net
+
+  backup-service:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-sistemaventas}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-21600}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    volumes:
+      - backups_data:/backups
+      - ./backups/backup.sh:/scripts/backup.sh:ro
+    networks:
+      - data_net
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - observability_net
+      - admin_net
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+      GF_SERVER_HTTP_PORT: 3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - observability_net
+      - admin_net
+
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ./ops/loki/config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    networks:
+      - observability_net
+
+  promtail:
+    image: grafana/promtail:latest
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./ops/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - observability_net
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    restart: unless-stopped
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres-primary:5432/${POSTGRES_DB:-sistemaventas}?sslmode=disable"
+    networks:
+      - data_net
+      - observability_net
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    networks:
+      - app_net
+      - observability_net
+
+networks:
+  edge_net:
+    driver: bridge
+  app_net:
+    driver: bridge
+    internal: true
+  data_net:
+    driver: bridge
+    internal: true
+  identity_net:
+    driver: bridge
+    internal: true
+  admin_net:
+    driver: bridge
+    internal: true
+  observability_net:
+    driver: bridge
+    internal: true
+
+volumes:
+  redis_data:
+  samba_data:
+  samba_users:
+  postgres_primary_data:
+  postgres_replica_data:
+  backups_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:

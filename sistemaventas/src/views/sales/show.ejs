@@ -1,0 +1,68 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1><%= sale.sale_number %></h1>
+      <p>Detalle completo de la venta registrada, con trazabilidad de cliente, vendedor e ítems.</p>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <section class="card detail-grid">
+      <div>
+        <strong>Cliente</strong>
+        <p><%= sale.customer_name || 'Consumidor final' %></p>
+      </div>
+      <div>
+        <strong>Vendedor</strong>
+        <p><%= sale.seller_name %></p>
+      </div>
+      <div>
+        <strong>Descuento</strong>
+        <p>Q <%= Number(sale.discount).toFixed(2) %></p>
+      </div>
+      <div>
+        <strong>Total</strong>
+        <p>Q <%= Number(sale.total).toFixed(2) %></p>
+      </div>
+      <div class="full-width">
+        <strong>Fecha</strong>
+        <p><%= new Date(sale.created_at).toLocaleString('es-GT') %></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="panel-header">
+        <div>
+          <h3>Ítems de la venta</h3>
+          <p>Detalle de productos incluidos en la operación.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Cantidad</th>
+              <th>Precio unitario</th>
+              <th>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% sale.items.forEach(item => { %>
+              <tr>
+                <td><%= item.product_name %></td>
+                <td><%= item.quantity %></td>
+                <td>Q <%= Number(item.unit_price).toFixed(2) %></td>
+                <td>Q <%= Number(item.subtotal).toFixed(2) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,95 @@
+﻿<%- include('partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1><%= appName %></h1>
+      <p>MVP académico orientado a arquitectura para Bebidas y Abarrotes S.A., con foco en inventario, ventas, atención al cliente y finanzas.</p>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <section class="status <%= databaseConnected ? 'ok' : 'warn' %>">
+      <strong>Estado de base de datos:</strong>
+      <span><%= databaseMessage %></span>
+    </section>
+
+    <section class="grid">
+      <article class="card metric-card">
+        <div class="metric-label">Total de productos</div>
+        <p class="metric-value"><%= stats.totalProducts %></p>
+        <div class="metric-hint">Catálogo disponible para operar.</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Stock bajo</div>
+        <p class="metric-value"><%= stats.lowStockProducts %></p>
+        <div class="metric-hint">Productos que requieren atención.</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Total de ventas</div>
+        <p class="metric-value"><%= stats.totalSales %></p>
+        <div class="metric-hint">Operaciones registradas en el sistema.</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Solicitudes pendientes</div>
+        <p class="metric-value"><%= stats.pendingRequests %></p>
+        <div class="metric-hint">Atención al cliente por resolver.</div>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="panel-header">
+        <div>
+          <h3>Qué hay acá y por qué importa</h3>
+          <p>La app ya refleja la separación de responsabilidades que venimos construyendo.</p>
+        </div>
+      </div>
+      <ul class="info-list">
+        <li>La <strong>ruta</strong> decide a qué controlador enviar la solicitud.</li>
+        <li>El <strong>controlador</strong> coordina la respuesta.</li>
+        <li>El <strong>repositorio</strong> habla con PostgreSQL.</li>
+        <li>La <strong>vista EJS</strong> renderiza HTML del lado del servidor.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="panel-header">
+        <div>
+          <h3>Ventas recientes</h3>
+          <p>Actividad más reciente del sistema para lectura rápida.</p>
+        </div>
+      </div>
+
+      <% if (stats.recentSales.length === 0) { %>
+        <div class="empty-state">Todavía no hay ventas recientes para mostrar.</div>
+      <% } else { %>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No. venta</th>
+                <th>Cliente</th>
+                <th>Vendedor</th>
+                <th>Total</th>
+                <th>Fecha</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% stats.recentSales.forEach(sale => { %>
+                <tr>
+                  <td><a href="/ventas/<%= sale.id %>"><%= sale.sale_number %></a></td>
+                  <td><%= sale.customer_name || 'Consumidor final' %></td>
+                  <td><%= sale.seller_name %></td>
+                  <td>Q <%= Number(sale.total).toFixed(2) %></td>
+                  <td><%= new Date(sale.created_at).toLocaleString('es-GT') %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+  </section>
+</section>
+
+<%- include('partials/footer') %>

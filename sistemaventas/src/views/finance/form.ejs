@@ -1,0 +1,46 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1>Registrar egreso</h1>
+      <p>Ingreso manual de gastos operativos para completar el resumen financiero del sistema.</p>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <% if (errors.length > 0) { %>
+      <section class="status warn">
+        <strong>Corregí estos puntos:</strong>
+        <ul class="info-list">
+          <% errors.forEach(error => { %>
+            <li><%= error %></li>
+          <% }) %>
+        </ul>
+      </section>
+    <% } %>
+
+    <section class="card">
+      <form class="form" method="POST" action="/finanzas/egresos">
+        <div class="form-grid">
+          <label>
+            Concepto
+            <input type="text" name="concept" value="<%= formData.concept %>" required>
+          </label>
+
+          <label>
+            Monto
+            <input type="number" min="0.01" step="0.01" name="amount" value="<%= formData.amount %>" required>
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <a class="button button-secondary button-sm" href="/finanzas"><span class="button-icon">←</span><span>Cancelar</span></a>
+          <button class="button button-sm" type="submit"><span class="button-icon">✔</span><span>Guardar egreso</span></button>
+        </div>
+      </form>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

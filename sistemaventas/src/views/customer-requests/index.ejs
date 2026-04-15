@@ -1,0 +1,75 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1>Atención al cliente</h1>
+      <p>Listado de solicitudes, pedidos especiales y reclamos registrados.</p>
+    </div>
+    <div class="page-actions">
+      <a class="button" href="/solicitudes/nueva"><span class="button-icon">＋</span><span>Nueva solicitud</span></a>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <% if (message) { %>
+      <section class="status ok">
+        <strong>Listo:</strong>
+        <span><%= message %></span>
+      </section>
+    <% } %>
+
+    <section class="card">
+      <div class="panel-header">
+        <div>
+          <h3>Solicitudes registradas</h3>
+          <p>Seguimiento de reclamos, pedidos especiales y consultas.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Tipo</th>
+              <th>Estado</th>
+              <th>Teléfono</th>
+              <th>Registrado por</th>
+              <th>Fecha</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (requests.length === 0) { %>
+              <tr>
+                <td colspan="7">Todavía no hay solicitudes registradas.</td>
+              </tr>
+            <% } %>
+            <% requests.forEach(request => { %>
+              <tr>
+                <td><%= request.customer_name %></td>
+                <td><%= request.request_type %></td>
+                <td><span class="badge"><%= request.status_name %></span></td>
+                <td><%= request.contact_phone || 'Sin teléfono' %></td>
+                <td><%= request.created_by_name %></td>
+                <td><%= new Date(request.created_at).toLocaleString('es-GT') %></td>
+                <td><a class="button button-ghost button-sm" href="/solicitudes/<%= request.id %>"><span class="button-icon">👁</span><span>Ver detalle</span></a></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Qué estás aprendiendo acá</h3>
+      <ul class="info-list">
+        <li>No toda entidad de negocio necesita una transacción tan compleja como ventas.</li>
+        <li>Atención al cliente gira más alrededor de <strong>seguimiento de estado</strong> y trazabilidad.</li>
+        <li>Un buen sistema integrado no solo vende: también registra y atiende problemas del cliente.</li>
+      </ul>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

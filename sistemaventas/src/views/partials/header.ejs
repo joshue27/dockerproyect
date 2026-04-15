@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> | Sistema Ventas</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<% const safeCurrentUser = typeof currentUser !== 'undefined' ? currentUser : null; %>
+<% const safeCurrentPath = typeof currentPath !== 'undefined' ? currentPath : ''; %>
+<body class="<%= safeCurrentUser ? 'has-sidebar-layout' : 'public-layout' %>">
+  <% if (safeCurrentUser) { %>
+    <header class="topbar mobile-only">
+      <div class="topbar-shell">
+        <div class="topbar-main">
+          <div class="topbar-heading topbar-heading-mobile">
+            <span class="topbar-heading-kicker">Plataforma operativa</span>
+            <strong>Sistema de Ventas</strong>
+            <span>Bebidas y Abarrotes S.A.</span>
+          </div>
+
+          <div class="topbar-actions">
+            <button class="menu-toggle mobile-only" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="main-nav">
+              <span></span>
+              <span></span>
+              <span></span>
+            </button>
+          </div>
+        </div>
+
+        <nav id="main-nav" class="topnav topnav-mobile mobile-only">
+          <div class="menu-panel-header">
+            <div class="menu-user-mobile">
+              <div>
+                <strong><%= safeCurrentUser.fullName %></strong>
+                <span><%= safeCurrentUser.roleName %></span>
+              </div>
+              <form method="POST" action="/logout" class="inline-form full-width-mobile">
+                <button class="button button-danger button-sm" type="submit"><span class="button-icon">⇦</span><span>Cerrar sesión</span></button>
+              </form>
+            </div>
+          </div>
+
+          <a class="<%= safeCurrentPath === '/' ? 'active-nav' : '' %>" href="/"><span class="nav-icon">🏪</span><span>Dashboard</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/productos') ? 'active-nav' : '' %>" href="/productos"><span class="nav-icon">📦</span><span>Productos</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/ventas') ? 'active-nav' : '' %>" href="/ventas"><span class="nav-icon">🛒</span><span>Ventas</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/solicitudes') ? 'active-nav' : '' %>" href="/solicitudes"><span class="nav-icon">💬</span><span>Atención cliente</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/finanzas') ? 'active-nav' : '' %>" href="/finanzas"><span class="nav-icon">💰</span><span>Finanzas</span></a>
+          <% if (safeCurrentUser.roleName === 'admin') { %>
+            <a class="<%= safeCurrentPath.startsWith('/usuarios') ? 'active-nav' : '' %>" href="/usuarios"><span class="nav-icon">👥</span><span>Usuarios</span></a>
+          <% } %>
+        </nav>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <aside class="app-sidebar desktop-only" id="desktop-sidebar">
+        <div class="sidebar-top">
+          <div class="sidebar-brand">
+            <span class="sidebar-kicker">Plataforma operativa</span>
+            <strong>Sistema de Ventas</strong>
+            <span>Bebidas y Abarrotes S.A.</span>
+          </div>
+
+          <button class="sidebar-toggle" type="button" aria-label="Ocultar menú lateral" aria-expanded="true" aria-controls="desktop-sidebar">
+            <span>⇤</span>
+          </button>
+        </div>
+
+        <nav class="sidebar-nav">
+          <a class="<%= safeCurrentPath === '/' ? 'active-nav' : '' %>" href="/"><span class="nav-icon">🏪</span><span class="sidebar-label">Dashboard</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/productos') ? 'active-nav' : '' %>" href="/productos"><span class="nav-icon">📦</span><span class="sidebar-label">Productos</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/ventas') ? 'active-nav' : '' %>" href="/ventas"><span class="nav-icon">🛒</span><span class="sidebar-label">Ventas</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/solicitudes') ? 'active-nav' : '' %>" href="/solicitudes"><span class="nav-icon">💬</span><span class="sidebar-label">Atención cliente</span></a>
+          <a class="<%= safeCurrentPath.startsWith('/finanzas') ? 'active-nav' : '' %>" href="/finanzas"><span class="nav-icon">💰</span><span class="sidebar-label">Finanzas</span></a>
+          <% if (safeCurrentUser.roleName === 'admin') { %>
+            <a class="<%= safeCurrentPath.startsWith('/usuarios') ? 'active-nav' : '' %>" href="/usuarios"><span class="nav-icon">👥</span><span class="sidebar-label">Usuarios</span></a>
+          <% } %>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="sidebar-user">
+            <strong><%= safeCurrentUser.fullName %></strong>
+            <span><%= safeCurrentUser.roleName %></span>
+          </div>
+          <form method="POST" action="/logout" class="sidebar-logout-form">
+            <button class="button button-danger button-sm" type="submit"><span class="button-icon">⇦</span><span class="sidebar-label">Salir</span></button>
+          </form>
+        </div>
+      </aside>
+
+      <div class="app-main">
+        <main class="container app-content">
+  <% } else { %>
+    <header class="topbar">
+      <div class="topbar-shell">
+        <div class="topbar-heading">
+          <span class="topbar-heading-kicker">Plataforma operativa</span>
+          <strong>Sistema de Ventas</strong>
+          <span>Bebidas y Abarrotes S.A.</span>
+        </div>
+      </div>
+    </header>
+    <main class="container">
+  <% } %>

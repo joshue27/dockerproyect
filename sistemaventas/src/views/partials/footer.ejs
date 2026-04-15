@@ -1,0 +1,22 @@
+  <% const safeCurrentUser = typeof currentUser !== 'undefined' ? currentUser : null; %>
+  </main>
+  <% if (safeCurrentUser) { %>
+    <footer class="app-footer">
+      <div class="app-footer-card">
+        <span><strong>Sistema Ventas</strong> · arquitectura mínima con módulos integrados.</span>
+        <span>Node.js · Express · EJS · PostgreSQL</span>
+      </div>
+    </footer>
+    </div>
+    </div>
+  <% } else { %>
+    <footer class="app-footer">
+      <div class="app-footer-card">
+        <span><strong>Sistema Ventas</strong> · arquitectura mínima con módulos integrados.</span>
+        <span>Node.js · Express · EJS · PostgreSQL</span>
+      </div>
+    </footer>
+  <% } %>
+  <script src="/js/app.js"></script>
+</body>
+</html>

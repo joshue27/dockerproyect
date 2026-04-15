@@ -1,0 +1,7 @@
+dn: ou=people,{{ LDAP_BASE_DN }}
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,{{ LDAP_BASE_DN }}
+objectClass: organizationalUnit
+ou: groups

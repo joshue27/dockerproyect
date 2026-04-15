@@ -1,0 +1,48 @@
+﻿<%- include('../partials/header') %>
+
+<section class="page-shell">
+  <header class="page-header">
+    <div class="page-title-group">
+      <h1><%= product.name %></h1>
+      <p>Vista de lectura para inspeccionar el producto antes de editarlo o tomar decisiones operativas.</p>
+    </div>
+    <div class="page-actions">
+      <a class="button button-secondary" href="/productos/<%= product.id %>/editar"><span class="button-icon">✎</span><span>Editar producto</span></a>
+    </div>
+  </header>
+
+  <section class="page-body">
+    <section class="card detail-grid">
+      <div>
+        <strong>SKU</strong>
+        <p><%= product.sku %></p>
+      </div>
+      <div>
+        <strong>Nombre</strong>
+        <p><%= product.name %></p>
+      </div>
+      <div class="full-width">
+        <strong>Descripción</strong>
+        <p><%= product.description || 'Sin descripción registrada.' %></p>
+      </div>
+      <div>
+        <strong>Precio</strong>
+        <p>Q <%= Number(product.price).toFixed(2) %></p>
+      </div>
+      <div>
+        <strong>Stock actual</strong>
+        <p class="<%= product.stock <= product.min_stock ? 'text-danger' : '' %>"><%= product.stock %></p>
+      </div>
+      <div>
+        <strong>Stock mínimo</strong>
+        <p><%= product.min_stock %></p>
+      </div>
+      <div>
+        <strong>Activo</strong>
+        <p><%= product.active ? 'Sí' : 'No' %></p>
+      </div>
+    </section>
+  </section>
+</section>
+
+<%- include('../partials/footer') %>

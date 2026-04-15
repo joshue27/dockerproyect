@@ -1,0 +1,30 @@
+{
+  "name": "sistemaventas",
+  "version": "1.0.0",
+  "description": "MVP academico de gestion para Bebidas y Abarrotes S.A.",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "keywords": [
+    "node",
+    "express",
+    "postgres",
+    "ejs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "connect-redis": "^9.0.0",
+    "dotenv": "^16.6.1",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "express-session": "^1.19.0",
+    "pg": "^8.16.3",
+    "redis": "^5.12.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
