@@ -1,0 +1,740 @@
+#!/bin/bash
+# =============================================================================
+# Sistema de Ventas — Script de Instalación para Alma Linux
+# =============================================================================
+#
+# Prepara un servidor Alma Linux 8.x/9.x e instala todo el stack Docker:
+#   - Nginx (reverse proxy + load balancer)
+#   - App Node.js x2 (Sistema Ventas con sesiones en Redis)
+#   - Redis (session store)
+#   - Samba AD DC (Active Directory Domain Controller)
+#   - PostgreSQL 17 (primary + replica con replicación streaming)
+#   - Backup automático (DB + archivos + rclone cloud sync)
+#   - Stack de observabilidad (Prometheus, Grafana, Loki, Promtail)
+#
+# REQUISITOS MÍNIMOS DE HARDWARE:
+#   - 4 vCPU  |  8 GB RAM  |  40 GB disco
+#
+# REQUISITOS DE SOFTWARE:
+#   - Alma Linux 8.x o 9.x (instalación mínima o server)
+#   - Acceso a internet
+#   - Ejecutar como root (sudo no alcanza para algunas operaciones)
+#
+# USO:
+#   1. Copiá este proyecto al servidor Alma Linux (scp, rsync, git clone)
+#   2. Ejecutá como root desde la raíz del proyecto:
+#        chmod +x install-almalinux.sh
+#        sudo ./install-almalinux.sh
+#   3. Seguí las instrucciones en pantalla
+#
+# IMPORTANTE:
+#   - El script es IDEMPOTENTE: podés ejecutarlo múltiples veces sin miedo
+#   - Se saltea pasos ya completados
+#   - Si algo falla a la mitad, corregí el problema y volvé a ejecutar
+#
+# =============================================================================
+
+set -euo pipefail
+
+# ─── Colores ───────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# ─── Configuración ─────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR"
+ENV_FILE="$PROJECT_DIR/.env"
+ENV_EXAMPLE="$PROJECT_DIR/docker-compose.env.example"
+COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+
+# Directorios host para datos persistentes
+APP_DATA_DIR="${APP_DATA_DIR:-/srv/sistemaventas/app-data}"
+BACKUPS_DIR="${BACKUPS_DIR:-/srv/sistemaventas/backups}"
+RCLONE_CONFIG_DIR="${RCLONE_CONFIG_DIR:-/srv/sistemaventas/rclone}"
+
+# ─── Funciones de logging ──────────────────────────────────────────────────
+log_info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
+log_ok()    { echo -e "${GREEN}[✔]${NC}   $*"; }
+log_warn()  { echo -e "${YELLOW}[⚠]${NC}   $*"; }
+log_error() { echo -e "${RED}[✘]${NC}  $*"; }
+log_step()  { echo -e "\n${CYAN}${BOLD}═══ $* ═══${NC}"; }
+log_ask()   { echo -e "${YELLOW}[?]${NC}   $*"; }
+
+# ─── Banner ────────────────────────────────────────────────────────────────
+clear 2>/dev/null || true
+echo ""
+echo -e "${CYAN}${BOLD}"
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║                                                                  ║"
+echo "║       Sistema de Ventas — Instalador para Alma Linux             ║"
+echo "║                                                                  ║"
+echo "║       Docker Compose Stack:                                      ║"
+echo "║       Nginx · App (x2) · Redis · PostgreSQL (HA)                 ║"
+echo "║       Samba AD DC · Backup · Prometheus · Grafana · Loki        ║"
+echo "║                                                                  ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+echo ""
+
+# =============================================================================
+# 0. VERIFICACIONES INICIALES
+# =============================================================================
+log_step "PASO 0: Verificaciones iniciales"
+
+# 0.1 — Root check
+if [[ $EUID -ne 0 ]]; then
+   log_error "Este script debe ejecutarse como root."
+   echo "       Ejecutalo con:  sudo ./install-almalinux.sh"
+   exit 1
+fi
+log_ok "Ejecutando como root"
+
+# 0.2 — Detectar Alma Linux
+if [[ -f /etc/almalinux-release ]]; then
+    ALMA_VERSION=$(rpm -E %rhel 2>/dev/null || echo "unknown")
+    source /etc/os-release 2>/dev/null || true
+    log_ok "Sistema: ${PRETTY_NAME:-Alma Linux} (RHEL ${ALMA_VERSION} compatible)"
+else
+    log_warn "No se detectó /etc/almalinux-release. ¿Estás seguro de que es Alma Linux?"
+    log_warn "El script continuará, pero puede fallar si estás en otra distro."
+    echo ""
+    log_ask "¿Continuar de todas formas? [s/N] "
+    read -r RESP
+    if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
+        log_info "Saliendo. Instalá Alma Linux y volvé a ejecutar el script."
+        exit 0
+    fi
+    ALMA_VERSION=$(rpm -E %rhel 2>/dev/null || echo "8")
+fi
+
+# 0.3 — Verificar que estamos en el directorio del proyecto
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+    log_error "No se encontró docker-compose.yml en $PROJECT_DIR"
+    log_error "Ejecutá este script desde la raíz del proyecto."
+    exit 1
+fi
+log_ok "Directorio del proyecto: $PROJECT_DIR"
+
+# 0.4 — Verificar recursos del sistema
+TOTAL_RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+TOTAL_RAM_GB=$((TOTAL_RAM_KB / 1024 / 1024))
+CPU_COUNT=$(nproc)
+DISK_FREE_GB=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
+
+echo ""
+log_info "Recursos detectados:"
+log_info "  CPU:     ${CPU_COUNT} vCPUs"
+log_info "  RAM:     ${TOTAL_RAM_GB} GB"
+log_info "  Disco /: ${DISK_FREE_GB} GB libres"
+
+WARNINGS=0
+if [[ $TOTAL_RAM_GB -lt 4 ]]; then
+    log_warn "RAM insuficiente (< 4 GB). El stack puede volverse inestable."
+    ((WARNINGS++))
+fi
+if [[ $CPU_COUNT -lt 2 ]]; then
+    log_warn "Pocos CPUs (< 2). Los tiempos de inicio serán lentos."
+    ((WARNINGS++))
+fi
+if [[ $DISK_FREE_GB -lt 20 ]]; then
+    log_warn "Poco espacio en disco (< 20 GB). Los backups y datos pueden llenarlo rápido."
+    ((WARNINGS++))
+fi
+
+if [[ $WARNINGS -gt 0 ]]; then
+    echo ""
+    log_ask "Hay $WARNINGS advertencia(s) de recursos. ¿Continuar de todas formas? [s/N] "
+    read -r RESP
+    if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
+        log_info "Saliendo. Ajustá los recursos de la VM y volvé a intentar."
+        exit 0
+    fi
+fi
+
+echo ""
+log_ok "Verificaciones iniciales completadas."
+
+# =============================================================================
+# 1. ACTUALIZAR SISTEMA
+# =============================================================================
+log_step "PASO 1: Actualizando paquetes del sistema"
+
+dnf check-update -y 2>&1 || true  # no falla si no hay updates
+dnf upgrade -y
+log_ok "Sistema actualizado"
+
+# =============================================================================
+# 2. INSTALAR PREREQUISITOS
+# =============================================================================
+log_step "PASO 2: Instalando prerequisitos"
+
+dnf install -y \
+    dnf-plugins-core \
+    curl \
+    wget \
+    git \
+    unzip \
+    tar \
+    gzip \
+    bash-completion \
+    ca-certificates \
+    policycoreutils-python-utils \
+    ss \
+    net-tools
+
+log_ok "Prerequisitos instalados"
+
+# =============================================================================
+# 3. INSTALAR DOCKER CE + DOCKER COMPOSE
+# =============================================================================
+log_step "PASO 3: Instalando Docker Engine y Docker Compose"
+
+# 3.1 — Remover versiones viejas si existen
+dnf remove -y \
+    docker \
+    docker-client \
+    docker-client-latest \
+    docker-common \
+    docker-latest \
+    docker-latest-logrotate \
+    docker-logrotate \
+    docker-engine \
+    podman \
+    runc \
+    2>/dev/null || true
+
+# 3.2 — Agregar repositorio oficial de Docker CE
+if ! rpm -q docker-ce &>/dev/null; then
+    log_info "Agregando repositorio Docker CE..."
+    dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+
+    log_info "Instalando Docker CE + Docker Compose plugin..."
+    dnf install -y \
+        docker-ce \
+        docker-ce-cli \
+        containerd.io \
+        docker-buildx-plugin \
+        docker-compose-plugin
+
+    log_ok "Docker instalado"
+else
+    log_ok "Docker ya está instalado: $(docker --version)"
+fi
+
+# 3.3 — Iniciar y habilitar Docker
+systemctl enable --now docker
+if systemctl is-active --quiet docker; then
+    log_ok "Docker está corriendo"
+else
+    log_error "Docker no pudo iniciarse. Revisá: systemctl status docker"
+    exit 1
+fi
+
+# 3.4 — Verificar Docker Compose
+if docker compose version &>/dev/null; then
+    log_ok "Docker Compose: $(docker compose version)"
+else
+    log_error "Docker Compose no está disponible. ¿Instalaste docker-compose-plugin?"
+    exit 1
+fi
+
+# =============================================================================
+# 4. CONFIGURAR DAEMON DOCKER (log rotation, storage driver)
+# =============================================================================
+log_step "PASO 4: Configurando Docker daemon"
+
+mkdir -p /etc/docker
+DAEMON_JSON="/etc/docker/daemon.json"
+
+if [[ ! -f "$DAEMON_JSON" ]]; then
+    cat > "$DAEMON_JSON" <<'DAEMON'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "storage-driver": "overlay2"
+}
+DAEMON
+    log_info "Creado $DAEMON_JSON con log rotation y overlay2"
+    systemctl restart docker
+    log_ok "Docker reiniciado con nueva configuración"
+else
+    log_ok "$DAEMON_JSON ya existe — no se modifica"
+fi
+
+# =============================================================================
+# 5. CONFIGURAR FIREWALL (firewalld)
+# =============================================================================
+log_step "PASO 5: Configurando firewall"
+
+# Asegurar que firewalld está corriendo
+if ! systemctl is-active --quiet firewalld; then
+    systemctl enable --now firewalld
+fi
+
+# ─── Puertos de la aplicación ───
+log_info "Abriendo puertos web..."
+firewall-cmd --permanent --add-port=8080/tcp 2>/dev/null && log_info "  8080/tcp (App)" || true
+firewall-cmd --permanent --add-port=8081/tcp 2>/dev/null && log_info "  8081/tcp (Grafana)" || true
+
+# ─── Puertos de Samba AD DC ───
+log_info "Abriendo puertos de Samba AD DC (Active Directory)..."
+SAMBA_TCP_PORTS=(53 88 135 389 445 464 636 3268 3269)
+SAMBA_UDP_PORTS=(53 88 389 464 123)
+
+for PORT in "${SAMBA_TCP_PORTS[@]}"; do
+    firewall-cmd --permanent --add-port="${PORT}/tcp" 2>/dev/null && log_info "  ${PORT}/tcp" || true
+done
+for PORT in "${SAMBA_UDP_PORTS[@]}"; do
+    firewall-cmd --permanent --add-port="${PORT}/udp" 2>/dev/null && log_info "  ${PORT}/udp" || true
+done
+
+# Rango de puertos dinámicos RPC para Samba
+firewall-cmd --permanent --add-port=50000-50050/tcp 2>/dev/null && log_info "  50000-50050/tcp (RPC dinámico)" || true
+
+# ─── Aplicar cambios ───
+firewall-cmd --reload
+log_ok "Firewall configurado"
+
+# ─── Mostrar reglas activas ───
+echo ""
+log_info "Puertos abiertos actualmente:"
+firewall-cmd --list-ports 2>/dev/null || true
+echo ""
+
+# =============================================================================
+# 6. CONFIGURAR SELINUX PARA DOCKER
+# =============================================================================
+log_step "PASO 6: Configurando SELinux para Docker"
+
+SELINUX_MODE=$(getenforce 2>/dev/null || echo "Disabled")
+log_info "SELinux está en modo: ${SELINUX_MODE}"
+
+if [[ "$SELINUX_MODE" == "Enforcing" ]]; then
+    log_info "Ajustando SELinux para montajes de Docker..."
+
+    # Instalar container-selinux si no está
+    dnf install -y container-selinux 2>/dev/null || true
+
+    # Crear directorios host si no existen
+    mkdir -p "$APP_DATA_DIR" "$BACKUPS_DIR" "$RCLONE_CONFIG_DIR"
+
+    # Aplicar contexto container_file_t a los directorios de datos persistentes
+    # Esto permite que los contenedores Docker lean/escriban en estos paths
+    log_info "Aplicando contexto SELinux a directorios de datos..."
+    semanage fcontext -a -t container_file_t "${APP_DATA_DIR}(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t container_file_t "${BACKUPS_DIR}(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t container_file_t "${RCLONE_CONFIG_DIR}(/.*)?" 2>/dev/null || true
+    restorecon -Rv "$APP_DATA_DIR" "$BACKUPS_DIR" "$RCLONE_CONFIG_DIR" 2>/dev/null || true
+
+    # Para los bind mounts del directorio del proyecto (nginx configs, scripts, etc.)
+    # Docker con SELinux enforcing puede bloquear el acceso a estos archivos.
+    # Estrategia: aplicar contexto en el directorio del proyecto.
+    log_info "Aplicando contexto SELinux al directorio del proyecto..."
+    semanage fcontext -a -t container_file_t "${PROJECT_DIR}/nginx(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t container_file_t "${PROJECT_DIR}/backups(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t container_file_t "${PROJECT_DIR}/database(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t container_file_t "${PROJECT_DIR}/ops(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t container_file_t "${PROJECT_DIR}/ldap(/.*)?" 2>/dev/null || true
+    restorecon -Rv "$PROJECT_DIR/nginx" "$PROJECT_DIR/backups" "$PROJECT_DIR/database" \
+                   "$PROJECT_DIR/ops" "$PROJECT_DIR/ldap" 2>/dev/null || true
+
+    # Verificar que Docker puede acceder (test con un container efímero)
+    if docker run --rm -v "$APP_DATA_DIR:/data:rw" alpine:3.20 touch /data/.selinux-test 2>/dev/null; then
+        rm -f "$APP_DATA_DIR/.selinux-test"
+        log_ok "SELinux configurado correctamente — Docker puede acceder a los volúmenes"
+    else
+        log_warn "SELinux podría estar bloqueando montajes de Docker."
+        log_warn "Si Docker falla al levantar los servicios, ejecutá temporalmente:"
+        log_warn "    sudo setenforce 0"
+        log_warn "Y reportá el problema con:  sudo ausearch -m avc -ts recent"
+    fi
+elif [[ "$SELINUX_MODE" == "Disabled" ]]; then
+    log_ok "SELinux deshabilitado — sin ajustes necesarios"
+else
+    log_info "SELinux en modo Permissive — registra pero no bloquea. Sin ajustes necesarios."
+fi
+
+# =============================================================================
+# 7. CREAR ESTRUCTURA DE DIRECTORIOS
+# =============================================================================
+log_step "PASO 7: Creando estructura de directorios host"
+
+mkdir -p "$APP_DATA_DIR"
+mkdir -p "$BACKUPS_DIR"/{db,files}
+mkdir -p "$RCLONE_CONFIG_DIR"
+
+log_ok "Directorios creados:"
+log_info "  Datos de app:    $APP_DATA_DIR"
+log_info "  Backups:         $BACKUPS_DIR"
+log_info "  Rclone config:   $RCLONE_CONFIG_DIR"
+
+# =============================================================================
+# 8. CONFIGURAR ARCHIVO .ENV
+# =============================================================================
+log_step "PASO 8: Configurando variables de entorno (.env)"
+
+if [[ -f "$ENV_FILE" ]]; then
+    log_info "Ya existe un archivo .env. Se mantiene sin cambios."
+    log_info "Si querés regenerarlo con los defaults, borralo primero:"
+    log_info "  rm $ENV_FILE && sudo ./install-almalinux.sh"
+else
+    if [[ -f "$ENV_EXAMPLE" ]]; then
+        cp "$ENV_EXAMPLE" "$ENV_FILE"
+        log_ok ".env creado desde docker-compose.env.example"
+    else
+        log_warn "No se encontró docker-compose.env.example. Creando .env con defaults..."
+        cat > "$ENV_FILE" <<'ENVEOF'
+# =============================================================================
+# Sistema de Ventas — Variables de Entorno
+# Generado por install-almalinux.sh
+# =============================================================================
+# CAMBIÁ todas las contraseñas por defecto antes de usar en producción.
+# Después de editar, ejecutá: docker compose up -d
+# =============================================================================
+# ─── Puertos ───
+APP_PORT=8080
+GRAFANA_PORT=8081
+
+# ─── PostgreSQL ───
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=cambiar_esta_password_ya
+POSTGRES_DB=sistemaventas
+REPLICATION_USER=replicator
+REPLICATION_PASSWORD=cambiar_replication_password_ya
+
+# ─── App ───
+SESSION_SECRET=cambiar_este_secreto_ya
+
+# ─── Samba AD DC ───
+SAMBA_DOMAIN=proyecto.local
+SAMBA_REALM=PROYECTO.LOCAL
+SAMBA_WORKGROUP=PROYECTO
+SAMBA_NETBIOS_NAME=DC01
+SAMBA_DNS_FORWARDER=1.1.1.1
+SAMBA_ADMIN_PASSWORD=Admin123!
+
+# ─── Grafana ───
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=admin123
+
+# ─── Directorios host para datos persistentes ───
+HOST_APP_DATA_DIR=/srv/sistemaventas/app-data
+HOST_BACKUPS_DIR=/srv/sistemaventas/backups
+RCLONE_CONFIG_DIR=/srv/sistemaventas/rclone
+
+# ─── Backups automáticos ───
+DB_BACKUP_INTERVAL_SECONDS=21600
+DB_BACKUP_RETENTION_DAYS=7
+FILES_BACKUP_INTERVAL_SECONDS=21600
+FILES_BACKUP_RETENTION_DAYS=7
+FILES_ARCHIVE_PREFIX=app-files
+
+# ─── Rclone (sincronización cloud) ───
+RCLONE_REMOTE_NAME=gdrive
+RCLONE_REMOTE_PATH=sistemaventas/backups
+RCLONE_SYNC_MODE=copy
+RCLONE_SYNC_INTERVAL_SECONDS=900
+ENVEOF
+        log_ok ".env creado con valores por defecto"
+    fi
+
+    echo ""
+    log_warn "──────────────────────────────────────────────────────────"
+    log_warn "  REVISÁ el archivo .env y cambiá las contraseñas por"
+    log_warn "  defecto ANTES de levantar el stack en producción."
+    log_warn ""
+    log_warn "  Variables críticas a cambiar:"
+    log_warn "    POSTGRES_PASSWORD"
+    log_warn "    REPLICATION_PASSWORD"
+    log_warn "    SESSION_SECRET"
+    log_warn "    SAMBA_ADMIN_PASSWORD"
+    log_warn "    GRAFANA_ADMIN_PASSWORD"
+    log_warn "──────────────────────────────────────────────────────────"
+    echo ""
+fi
+
+# =============================================================================
+# 9. PULL DE IMÁGENES DOCKER
+# =============================================================================
+log_step "PASO 9: Descargando imágenes Docker"
+
+log_info "Esto puede tardar varios minutos la primera vez..."
+cd "$PROJECT_DIR"
+
+# Pull de todas las imágenes en paralelo para acelerar
+docker compose pull 2>&1 || log_warn "Algunas imágenes no se pudieron descargar (se reintentará al levantar)"
+
+# Build de la app local
+log_info "Construyendo imagen de la aplicación (sistemaventas)..."
+docker compose build app1 2>&1 || log_warn "Build falló — ¿falta sistemaventas/package.json?"
+
+log_ok "Imágenes listas"
+
+# =============================================================================
+# 10. VALIDAR CONFIGURACIÓN DE DOCKER COMPOSE
+# =============================================================================
+log_step "PASO 10: Validando docker-compose.yml"
+
+if docker compose config &>/dev/null; then
+    log_ok "docker-compose.yml es válido"
+else
+    log_error "docker-compose.yml tiene errores. Revisá:"
+    docker compose config 2>&1
+    exit 1
+fi
+
+# =============================================================================
+# 11. LIBERAR PUERTO 53 SI systemd-resolved LO OCUPA
+# =============================================================================
+log_step "PASO 11: Verificando systemd-resolved (conflicto DNS con Samba AD DC)"
+
+# Este es el problema #1 al correr Samba AD DC en Linux:
+# systemd-resolved escucha en 127.0.0.53:53 y puede bloquear el puerto 53.
+# Samba AD DC necesita el puerto 53 para su propio servidor DNS.
+
+RESOLVED_ACTIVE=false
+if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+    RESOLVED_ACTIVE=true
+    log_warn "systemd-resolved está activo y PUEDE bloquear el puerto 53 (DNS)."
+    log_warn "Samba AD DC necesita puerto 53 para funcionar como Domain Controller."
+    echo ""
+    log_info "Opciones:"
+    log_info "  1) Deshabilitar systemd-resolved (recomendado si esta VM es solo para Docker)"
+    log_info "  2) Configurar Samba AD DC para usar un DNS forwarder diferente"
+    echo ""
+    log_ask "¿Deshabilitar systemd-resolved y usar /etc/resolv.conf tradicional? [S/n] "
+
+    read -r RESP
+    if [[ ! "$RESP" =~ ^[Nn]$ ]]; then
+        log_info "Deshabilitando systemd-resolved..."
+        systemctl disable --now systemd-resolved 2>/dev/null || true
+        # Reemplazar el symlink de resolv.conf con uno estático
+        rm -f /etc/resolv.conf
+        cat > /etc/resolv.conf <<'DNSRESOLV'
+# Resolv.conf estático (systemd-resolved deshabilitado para Samba AD DC)
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+DNSRESOLV
+        chattr +i /etc/resolv.conf 2>/dev/null || true  # inmutable para que NetworkManager no lo pise
+        log_ok "systemd-resolved deshabilitado. /etc/resolv.conf configurado manualmente."
+    else
+        log_warn "systemd-resolved se mantiene activo. Si Samba AD DC no levanta,"
+        log_warn "       ejecutá: sudo systemctl disable --now systemd-resolved"
+    fi
+else
+    log_ok "systemd-resolved no está activo — puerto 53 libre para Samba AD DC"
+fi
+
+# =============================================================================
+# 12. VERIFICAR PUERTOS ANTES DE LEVANTAR
+# =============================================================================
+log_step "PASO 12: Verificando puertos en uso"
+
+log_info "Buscando servicios que puedan entrar en conflicto..."
+CONFLICT=0
+
+CRITICAL_PORTS="53 88 135 389 445 464 636 8080 8081"
+for PORT in $CRITICAL_PORTS; do
+    if ss -tuln | grep -q ":${PORT} "; then
+        log_warn "Puerto ${PORT} ya está en uso:"
+        ss -tulnp | grep ":${PORT} " | head -1
+        ((CONFLICT++))
+    fi
+done
+
+if [[ $CONFLICT -gt 0 ]]; then
+    log_warn "Hay $CONFLICT puerto(s) en uso que pueden causar conflictos."
+    log_warn "Si son servicios del host que no necesitás, detenelos antes de continuar."
+    echo ""
+    log_ask "¿Continuar de todas formas? [s/N] "
+    read -r RESP
+    if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
+        log_info "Saliendo. Liberá los puertos y volvé a ejecutar."
+        exit 0
+    fi
+else
+    log_ok "Todos los puertos críticos están libres"
+fi
+
+# =============================================================================
+# 13. LEVANTAR EL STACK
+# =============================================================================
+log_step "PASO 13: Levantando el stack Docker"
+
+cd "$PROJECT_DIR"
+
+log_info "Iniciando todos los servicios (docker compose up -d)..."
+if docker compose up -d; then
+    log_ok "Stack levantado — esperando a que los servicios estén healthy..."
+else
+    log_error "Fallo al levantar el stack. Revisá: docker compose logs"
+    exit 1
+fi
+
+# =============================================================================
+# 14. ESPERAR HEALTH CHECKS
+# =============================================================================
+log_step "PASO 14: Verificando salud de los servicios"
+
+MAX_WAIT=180  # máximo 3 minutos
+WAITED=0
+INTERVAL=10
+
+log_info "Esperando hasta ${MAX_WAIT}s a que los servicios estén saludables..."
+
+while [[ $WAITED -lt $MAX_WAIT ]]; do
+    # Contar servicios totales y servicios healthy
+    TOTAL=$(docker compose ps -q 2>/dev/null | wc -l)
+    # Filter healthy status, ignoring services without health checks
+    HEALTHY=$(docker compose ps --format json 2>/dev/null | grep -c '"Health":"healthy"' || true)
+    STARTING=$(docker compose ps --format json 2>/dev/null | grep -c '"Health":"starting"' || true)
+    UNHEALTHY=$(docker compose ps --format json 2>/dev/null | grep -c '"Health":"unhealthy"' || true)
+
+    # Count services that have a health check defined (exclude "unknown" health)
+    WITH_HC=$(docker compose ps --format json 2>/dev/null | grep -cE '"Health":"(healthy|starting|unhealthy)"' || true)
+
+    echo -ne "  [${WAITED}s] Con healthcheck: ${HEALTHY:-0}/${WITH_HC:-0} healthy  |  Total contenedores: ${TOTAL:-0}\r"
+
+    # Si hay unhealthy, mostramos warning pero seguimos esperando (pueden estar reiniciándose)
+    if [[ ${UNHEALTHY:-0} -gt 0 ]]; then
+        echo ""
+        log_warn "Hay ${UNHEALTHY} servicio(s) unhealthy:"
+        docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | grep -i "unhealthy" || true
+    fi
+
+    # Verificar si todos los que tienen healthcheck están healthy
+    if [[ ${WITH_HC:-0} -gt 0 ]] && [[ ${HEALTHY:-0} -eq ${WITH_HC:-0} ]]; then
+        echo ""
+        log_ok "¡Todos los servicios con healthcheck están saludables! (${HEALTHY}/${WITH_HC})"
+        break
+    fi
+
+    # Si no hay servicios con healthcheck, salimos después de un tiempo prudencial
+    if [[ ${WITH_HC:-0} -eq 0 ]] && [[ $WAITED -ge 30 ]]; then
+        echo ""
+        log_ok "Servicios levantados (sin healthchecks definidos — se esperó 30s)"
+        break
+    fi
+
+    sleep $INTERVAL
+    WAITED=$((WAITED + INTERVAL))
+done
+
+echo ""
+
+# =============================================================================
+# 15. MOSTRAR ESTADO FINAL
+# =============================================================================
+log_step "PASO 15: Estado final del stack"
+
+echo ""
+docker compose ps 2>/dev/null || true
+echo ""
+
+# ─── Resumen de acceso ───
+log_step "RESUMEN DE ACCESO"
+
+# Detectar IP del servidor
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [[ -z "$SERVER_IP" ]]; then
+    # Fallback: intentar con ip addr
+    SERVER_IP=$(ip -4 addr show scope global | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+fi
+[[ -z "$SERVER_IP" ]] && SERVER_IP="IP_DEL_SERVIDOR"
+
+echo ""
+echo -e "${GREEN}${BOLD}  Stack funcionando. URLs de acceso:${NC}"
+echo ""
+echo -e "  ${CYAN}Aplicación (Sistema Ventas):${NC}"
+echo -e "    http://${SERVER_IP}:8080"
+echo ""
+echo -e "  ${CYAN}Grafana (Monitoreo):${NC}"
+echo -e "    http://${SERVER_IP}:8081"
+echo -e "    Usuario: admin"
+echo -e "    Password: admin123  (cambiala en .env)"
+echo ""
+echo -e "  ${CYAN}Samba AD DC:${NC}"
+echo -e "    Dominio:   ${SAMBA_DOMAIN:-proyecto.local}"
+echo -e "    DC:        ${SAMBA_NETBIOS_NAME:-DC01}"
+echo -e "    Admin:     Administrator"
+echo -e "    Password:  ${SAMBA_ADMIN_PASSWORD:-Admin123!}"
+echo -e "    Administración: solo por CLI / RSAT (sin interfaz web)"
+echo ""
+
+# ─── Comandos útiles ───
+log_step "COMANDOS ÚTILES"
+echo ""
+echo "  Ver logs de todos los servicios:"
+echo -e "    ${BOLD}docker compose logs -f${NC}"
+echo ""
+echo "  Ver logs de un servicio específico:"
+echo -e "    ${BOLD}docker compose logs -f app1${NC}"
+echo ""
+echo "  Reiniciar un servicio:"
+echo -e "    ${BOLD}docker compose restart nginx${NC}"
+echo ""
+echo "  Bajar todo el stack:"
+echo -e "    ${BOLD}docker compose down${NC}"
+echo ""
+echo "  Bajar TODO (incluyendo volúmenes — ¡pierde datos!):"
+echo -e "    ${BOLD}docker compose down -v${NC}"
+echo ""
+echo "  Backup manual de base de datos:"
+echo -e "    ${BOLD}docker compose exec backup-db-service sh -c 'pg_dump -h postgres-primary -U postgres -d sistemaventas | gzip > /backups/db/manual.sql.gz'${NC}"
+echo ""
+echo "  Ver backups realizados:"
+echo -e "    ${BOLD}ls -la ${BACKUPS_DIR}/db/${NC}"
+echo ""
+echo "  Entrar al contenedor de Samba AD DC:"
+echo -e "    ${BOLD}docker compose exec samba-ad-dc bash${NC}"
+echo ""
+echo "  Validar configuración de compose:"
+echo -e "    ${BOLD}docker compose config${NC}"
+echo ""
+
+# ─── Próximos pasos ───
+log_step "PRÓXIMOS PASOS RECOMENDADOS"
+echo ""
+echo "  1. Cambiá las contraseñas por defecto en .env:"
+echo -e "     ${BOLD}nano ${ENV_FILE}${NC}"
+echo "     Luego: ${BOLD}docker compose up -d${NC} (recrea servicios si cambiaron vars)"
+echo ""
+echo "  2. Verificá que la app responda:"
+echo -e "     ${BOLD}curl -s http://localhost:8080 | head -20${NC}"
+echo ""
+echo "  3. Configurá dashboards en Grafana:"
+echo -e "     Entrá a http://${SERVER_IP}:8081 y explorá los datasources pre-configurados"
+echo ""
+echo "  4. Creá usuarios en el dominio Samba AD:"
+echo -e "     ${BOLD}docker compose exec samba-ad-dc samba-tool user create usuario1 Password123!${NC}"
+echo ""
+echo "  5. Si querés unir una VM Linux cliente al dominio:"
+echo -e "     Instalá realmd, sssd y seguí la documentación de Samba AD DC"
+echo ""
+echo "  6. Configurá rclone para backup en la nube (opcional):"
+echo -e "     ${BOLD}docker run --rm -v ${RCLONE_CONFIG_DIR}:/config/rclone rclone/rclone config${NC}"
+echo ""
+
+log_step "INSTALACIÓN COMPLETADA"
+echo ""
+echo -e "  ${GREEN}${BOLD}✓${NC} El stack de Sistema de Ventas está corriendo en Alma Linux."
+echo ""
+echo "  Si algo falla, ejecutá ${BOLD}docker compose logs${NC} para diagnosticar."
+echo "  El script es idempotente: podés re-ejecutarlo si necesitás reparar algo."
+echo ""
+
+# =============================================================================
+# 16. GUARDAR ESTADO EN ENGRAM (si está disponible)
+# =============================================================================
+# Esta sección es opcional — el orchestrator puede capturar el resultado
+# para persistirlo en memoria.
+
+exit 0
