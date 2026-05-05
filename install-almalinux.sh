@@ -564,6 +564,7 @@ else
     log_warn "  3. Si ves 'additional property': versión de compose no soporta esa clave"
     log_warn ""
     log_warn "Probamos levantar igual — docker compose up -d también valida."
+fi
 
 # =============================================================================
 # 11. LIBERAR PUERTO 53 SI systemd-resolved LO OCUPA
