@@ -1,0 +1,129 @@
+# =============================================================================
+# Override para entornos con recursos limitados (6 GB RAM, 25 GB disco)
+# =============================================================================
+# Docker Compose mergea automáticamente este archivo con docker-compose.yml.
+# No necesitás especificarlo — alcanza con que exista en el mismo directorio.
+#
+# Qué hace este override:
+#   - Límites de memoria por contenedor para que ningún servicio acapare todo
+#   - PostgreSQL con shared_buffers reducido (128 MB en vez de defaults altos)
+#   - Backups cada 24h en vez de 6h (no se van a disparar en la demo)
+#   - Retención de métricas y logs al mínimo
+#
+# Para demo de 15 minutos: levantá 5-10 min antes, dejá que arranque, mostrás.
+# =============================================================================
+
+services:
+  # ─── nginx: liviano, no necesita mucho ───
+  nginx:
+    mem_limit: 64m
+    mem_reservation: 32m
+
+  # ─── App: Node.js con límite ajustado ───
+  app1:
+    mem_limit: 300m
+    mem_reservation: 150m
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=200"
+
+  app2:
+    mem_limit: 300m
+    mem_reservation: 150m
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=200"
+
+  # ─── Redis: con maxmemory para que no crezca sin control ───
+  redis:
+    mem_limit: 128m
+    mem_reservation: 64m
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - "64mb"
+      - --maxmemory-policy
+      - "allkeys-lru"
+
+  # ─── Samba AD DC: necesita más RAM, es lo más pesado ───
+  samba-ad-dc:
+    mem_limit: 1g
+    mem_reservation: 512m
+
+  # ─── PostgreSQL: shared_buffers bajo para que no reserve RAM de más ───
+  postgres-primary:
+    mem_limit: 512m
+    mem_reservation: 256m
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+
+  postgres-replica:
+    mem_limit: 384m
+    mem_reservation: 192m
+
+  # ─── Backups: uno por día, no se disparan en la demo ───
+  backup-db-service:
+    mem_limit: 128m
+    mem_reservation: 64m
+    environment:
+      DB_BACKUP_INTERVAL_SECONDS: "86400"
+      DB_BACKUP_RETENTION_DAYS: "2"
+
+  backup-files-service:
+    mem_limit: 64m
+    mem_reservation: 32m
+    environment:
+      FILES_BACKUP_INTERVAL_SECONDS: "86400"
+      FILES_BACKUP_RETENTION_DAYS: "2"
+
+  rclone-sync:
+    mem_limit: 64m
+    mem_reservation: 32m
+    environment:
+      RCLONE_SYNC_INTERVAL_SECONDS: "3600"
+
+  # ─── Observabilidad: límites ajustados ───
+  prometheus:
+    mem_limit: 256m
+    mem_reservation: 128m
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+      - --storage.tsdb.retention.size=500MB
+      - --web.enable-lifecycle
+
+  grafana:
+    mem_limit: 256m
+    mem_reservation: 128m
+
+  loki:
+    mem_limit: 128m
+    mem_reservation: 64m
+
+  promtail:
+    mem_limit: 64m
+    mem_reservation: 32m
+
+  # ─── Exporters: casi nada ───
+  postgres-exporter:
+    mem_limit: 48m
+    mem_reservation: 24m
+
+  redis-exporter:
+    mem_limit: 48m
+    mem_reservation: 24m

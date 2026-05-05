@@ -270,9 +270,53 @@ else
 fi
 
 # =============================================================================
-# 5. CONFIGURAR FIREWALL (firewalld)
+# 5. CONFIGURAR SWAP (esencial si tenés ≤ 8 GB RAM)
 # =============================================================================
-log_step "PASO 5: Configurando firewall"
+log_step "PASO 5: Configurando swap"
+
+TOTAL_RAM_GB=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}')
+CURRENT_SWAP_GB=$(free -g | awk '/Swap:/ {print $2}')
+SWAP_FILE="/swapfile"
+SWAP_SIZE_GB=4
+
+if [[ $TOTAL_RAM_GB -le 8 ]]; then
+    if [[ ${CURRENT_SWAP_GB:-0} -lt 2 ]]; then
+        log_warn "Tenés ${TOTAL_RAM_GB} GB de RAM y ${CURRENT_SWAP_GB:-0} GB de swap."
+        log_warn "El stack completo necesita ~5 GB. Sin swap, el kernel va a matar contenedores (OOM)."
+        echo ""
+        log_info "Creando archivo de swap de ${SWAP_SIZE_GB} GB en ${SWAP_FILE}..."
+
+        if [[ -f "$SWAP_FILE" ]]; then
+            log_info "Archivo de swap ya existe. Lo activo y sigo."
+            swapon "$SWAP_FILE" 2>/dev/null || true
+        else
+            dd if=/dev/zero of="$SWAP_FILE" bs=1M count=$((SWAP_SIZE_GB * 1024)) status=progress
+            chmod 600 "$SWAP_FILE"
+            mkswap "$SWAP_FILE"
+            swapon "$SWAP_FILE"
+
+            # Persistir en fstab
+            if ! grep -q "$SWAP_FILE" /etc/fstab; then
+                echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab
+            fi
+
+            # Ajustar swappiness para que prefiera RAM sobre swap
+            sysctl vm.swappiness=20
+            echo "vm.swappiness=20" > /etc/sysctl.d/99-swap.conf
+
+            log_ok "Swap de ${SWAP_SIZE_GB} GB configurado y persistente"
+        fi
+    else
+        log_ok "Swap suficiente: ${CURRENT_SWAP_GB} GB"
+    fi
+else
+    log_ok "RAM suficiente (${TOTAL_RAM_GB} GB) — swap no necesario"
+fi
+
+# =============================================================================
+# 6. CONFIGURAR FIREWALL (firewalld)
+# =============================================================================
+log_step "PASO 6: Configurando firewall"
 
 # Asegurar que firewalld está corriendo
 if ! systemctl is-active --quiet firewalld; then
@@ -312,7 +356,7 @@ echo ""
 # =============================================================================
 # 6. CONFIGURAR SELINUX PARA DOCKER
 # =============================================================================
-log_step "PASO 6: Configurando SELinux para Docker"
+log_step "PASO 7: Configurando SELinux para Docker"
 
 SELINUX_MODE=$(getenforce 2>/dev/null || echo "Disabled")
 log_info "SELinux está en modo: ${SELINUX_MODE}"
@@ -365,7 +409,7 @@ fi
 # =============================================================================
 # 7. CREAR ESTRUCTURA DE DIRECTORIOS
 # =============================================================================
-log_step "PASO 7: Creando estructura de directorios host"
+log_step "PASO 8: Creando estructura de directorios host"
 
 mkdir -p "$APP_DATA_DIR"
 mkdir -p "$BACKUPS_DIR"/{db,files}
@@ -379,7 +423,7 @@ log_info "  Rclone config:   $RCLONE_CONFIG_DIR"
 # =============================================================================
 # 8. CONFIGURAR ARCHIVO .ENV
 # =============================================================================
-log_step "PASO 8: Configurando variables de entorno (.env)"
+log_step "PASO 9: Configurando variables de entorno (.env)"
 
 if [[ -f "$ENV_FILE" ]]; then
     log_info "Ya existe un archivo .env. Se mantiene sin cambios."
@@ -464,7 +508,7 @@ fi
 # =============================================================================
 # 9. PULL DE IMÁGENES DOCKER
 # =============================================================================
-log_step "PASO 9: Descargando imágenes Docker"
+log_step "PASO 10: Descargando imágenes Docker"
 
 log_info "Esto puede tardar varios minutos la primera vez..."
 cd "$PROJECT_DIR"
@@ -481,7 +525,7 @@ log_ok "Imágenes listas"
 # =============================================================================
 # 10. VALIDAR CONFIGURACIÓN DE DOCKER COMPOSE
 # =============================================================================
-log_step "PASO 10: Validando docker-compose.yml"
+log_step "PASO 11: Validando docker-compose.yml"
 
 if docker compose config &>/dev/null; then
     log_ok "docker-compose.yml es válido"
@@ -494,7 +538,7 @@ fi
 # =============================================================================
 # 11. LIBERAR PUERTO 53 SI systemd-resolved LO OCUPA
 # =============================================================================
-log_step "PASO 11: Verificando systemd-resolved (conflicto DNS con Samba AD DC)"
+log_step "PASO 12: Verificando systemd-resolved (conflicto DNS con Samba AD DC)"
 
 # Este es el problema #1 al correr Samba AD DC en Linux:
 # systemd-resolved escucha en 127.0.0.53:53 y puede bloquear el puerto 53.
@@ -536,7 +580,7 @@ fi
 # =============================================================================
 # 12. VERIFICAR PUERTOS ANTES DE LEVANTAR
 # =============================================================================
-log_step "PASO 12: Verificando puertos en uso"
+log_step "PASO 13: Verificando puertos en uso"
 
 log_info "Buscando servicios que puedan entrar en conflicto..."
 CONFLICT=0
@@ -567,7 +611,7 @@ fi
 # =============================================================================
 # 13. LEVANTAR EL STACK
 # =============================================================================
-log_step "PASO 13: Levantando el stack Docker"
+log_step "PASO 14: Levantando el stack Docker"
 
 cd "$PROJECT_DIR"
 
@@ -582,7 +626,7 @@ fi
 # =============================================================================
 # 14. ESPERAR HEALTH CHECKS
 # =============================================================================
-log_step "PASO 14: Verificando salud de los servicios"
+log_step "PASO 15: Verificando salud de los servicios"
 
 MAX_WAIT=180  # máximo 3 minutos
 WAITED=0
@@ -633,7 +677,7 @@ echo ""
 # =============================================================================
 # 15. MOSTRAR ESTADO FINAL
 # =============================================================================
-log_step "PASO 15: Estado final del stack"
+log_step "PASO 16: Estado final del stack"
 
 echo ""
 docker compose ps 2>/dev/null || true

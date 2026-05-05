@@ -17,6 +17,20 @@ Eso clona el repo, instala Docker CE, configura firewall, SELinux, levanta el st
 
 **Requisitos mínimos:** 4 vCPU · 8 GB RAM · 40 GB disco · Acceso a internet
 
+### ¿Tenés ≤ 6 GB de RAM? (demo académica)
+
+El instalador **detecta RAM baja y configura swap de 4 GB automáticamente**.
+Además, el repo incluye `docker-compose.override.yml` con:
+
+- Límites de memoria por contenedor (ninguno acapara todo)
+- PostgreSQL con `shared_buffers=128MB`
+- Redis con `maxmemory=64mb`
+- Prometheus con retención reducida a 3 días / 500 MB
+- Backups cada 24h (no se disparan durante la demo)
+
+El override se aplica **automáticamente** por Docker Compose — no tenés que hacer nada.
+Levantá el stack 5-10 minutos antes de la demo, dejá que estabilice, y mostrás.
+
 ---
 
 ## Acceso rápido
