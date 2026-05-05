@@ -506,27 +506,64 @@ log_step "PASO 10: Descargando imágenes Docker"
 log_info "Esto puede tardar varios minutos la primera vez..."
 cd "$PROJECT_DIR"
 
-# Pull de todas las imágenes en paralelo para acelerar
-docker compose pull 2>&1 || log_warn "Algunas imágenes no se pudieron descargar (se reintentará al levantar)"
+# Pull de todas las imágenes (ignora errores — se reintenta en el up)
+log_info "Descargando imágenes Docker..."
+set +e
+docker compose pull 2>&1
+PULL_EXIT=$?
+set -e
+if [[ $PULL_EXIT -ne 0 ]]; then
+    log_warn "Algunas imágenes no se pudieron descargar (red, rate limit de Docker Hub, etc.)"
+    log_warn "No te preocupes — se reintentará automáticamente al hacer docker compose up."
+fi
 
 # Build de la app local
 log_info "Construyendo imagen de la aplicación (sistemaventas)..."
-docker compose build app1 2>&1 || log_warn "Build falló — ¿falta sistemaventas/package.json?"
+if [[ -f sistemaventas/package.json ]]; then
+    set +e
+    docker compose build app1 2>&1
+    BUILD_EXIT=$?
+    set -e
+    if [[ $BUILD_EXIT -ne 0 ]]; then
+        log_warn "Build de la app falló. Posibles causas:"
+        log_warn "  - npm ci falló (problema de red o package.json corrupto)"
+        log_warn "  - Dockerfile tiene errores"
+        log_warn "El resto del stack se puede levantar igual. Revisá los logs luego."
+    else
+        log_ok "App construida correctamente"
+    fi
+else
+    log_warn "No se encontró sistemaventas/package.json — ¿clonaste el repo completo?"
+    log_warn "La app no se va a construir. El resto del stack sí puede levantar."
+fi
 
-log_ok "Imágenes listas"
+log_ok "Descarga de imágenes completada (con o sin warnings, seguimos)"
 
 # =============================================================================
 # 10. VALIDAR CONFIGURACIÓN DE DOCKER COMPOSE
 # =============================================================================
 log_step "PASO 11: Validando docker-compose.yml"
 
-if docker compose config &>/dev/null; then
-    log_ok "docker-compose.yml es válido"
+log_info "Validando docker-compose.yml + override..."
+
+set +e
+COMPOSE_OUTPUT=$(docker compose config 2>&1)
+COMPOSE_EXIT=$?
+set -e
+
+if [[ $COMPOSE_EXIT -eq 0 ]]; then
+    log_ok "Configuración de Docker Compose válida"
 else
-    log_error "docker-compose.yml tiene errores. Revisá:"
-    docker compose config 2>&1
-    exit 1
-fi
+    log_warn "docker compose config encontró problemas:"
+    echo ""
+    echo "$COMPOSE_OUTPUT" | tail -20
+    echo ""
+    log_warn "Posibles causas y soluciones:"
+    log_warn "  1. Si ves 'mem_limit': Docker Compose muy viejo → dnf update docker-compose-plugin"
+    log_warn "  2. Si ves errores de YAML: revisá docker-compose.override.yml"
+    log_warn "  3. Si ves 'additional property': versión de compose no soporta esa clave"
+    log_warn ""
+    log_warn "Probamos levantar igual — docker compose up -d también valida."
 
 # =============================================================================
 # 11. LIBERAR PUERTO 53 SI systemd-resolved LO OCUPA
