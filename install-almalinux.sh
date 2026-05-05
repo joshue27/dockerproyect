@@ -102,12 +102,17 @@ if [[ -f /etc/almalinux-release ]]; then
 else
     log_warn "No se detectó /etc/almalinux-release. ¿Estás seguro de que es Alma Linux?"
     log_warn "El script continuará, pero puede fallar si estás en otra distro."
-    echo ""
-    log_ask "¿Continuar de todas formas? [s/N] "
-    read -r RESP
-    if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
-        log_info "Saliendo. Instalá Alma Linux y volvé a ejecutar el script."
-        exit 0
+
+    if [[ -t 0 ]]; then
+        echo ""
+        log_ask "¿Continuar de todas formas? [s/N] "
+        read -r RESP || true
+        if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
+            log_info "Saliendo."
+            exit 0
+        fi
+    else
+        log_info "Ejecución no interactiva — continuando (asumiendo RHEL-compatible)"
     fi
     ALMA_VERSION=$(rpm -E %rhel 2>/dev/null || echo "8")
 fi
@@ -124,7 +129,9 @@ log_ok "Directorio del proyecto: $PROJECT_DIR"
 TOTAL_RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
 TOTAL_RAM_GB=$((TOTAL_RAM_KB / 1024 / 1024))
 CPU_COUNT=$(nproc)
-DISK_FREE_GB=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
+DISK_FREE_GB=$(df -BG / 2>/dev/null | awk 'NR==2 {gsub(/G/,""); print $4}')
+# Si el parseo falla, asumimos que hay espacio suficiente
+[[ -z "$DISK_FREE_GB" ]] && DISK_FREE_GB=99
 
 echo ""
 log_info "Recursos detectados:"
@@ -132,28 +139,16 @@ log_info "  CPU:     ${CPU_COUNT} vCPUs"
 log_info "  RAM:     ${TOTAL_RAM_GB} GB"
 log_info "  Disco /: ${DISK_FREE_GB} GB libres"
 
-WARNINGS=0
+# Solo advertencias — nunca bloquean. El usuario ya sabe lo que tiene.
 if [[ $TOTAL_RAM_GB -lt 4 ]]; then
-    log_warn "RAM insuficiente (< 4 GB). El stack puede volverse inestable."
-    ((WARNINGS++))
+    log_warn "RAM baja (< 4 GB). El stack puede volverse inestable. Se recomienda swap."
 fi
 if [[ $CPU_COUNT -lt 2 ]]; then
     log_warn "Pocos CPUs (< 2). Los tiempos de inicio serán lentos."
-    ((WARNINGS++))
 fi
-if [[ $DISK_FREE_GB -lt 20 ]]; then
-    log_warn "Poco espacio en disco (< 20 GB). Los backups y datos pueden llenarlo rápido."
-    ((WARNINGS++))
-fi
-
-if [[ $WARNINGS -gt 0 ]]; then
-    echo ""
-    log_ask "Hay $WARNINGS advertencia(s) de recursos. ¿Continuar de todas formas? [s/N] "
-    read -r RESP
-    if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
-        log_info "Saliendo. Ajustá los recursos de la VM y volvé a intentar."
-        exit 0
-    fi
+if [[ $DISK_FREE_GB -lt 10 ]]; then
+    log_warn "MUY poco espacio en disco (< 10 GB). Los backups pueden llenarlo en días."
+    log_warn "Ajustá DB_BACKUP_RETENTION_DAYS=1 y FILES_BACKUP_RETENTION_DAYS=1 en .env"
 fi
 
 echo ""
@@ -549,14 +544,18 @@ if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
     RESOLVED_ACTIVE=true
     log_warn "systemd-resolved está activo y PUEDE bloquear el puerto 53 (DNS)."
     log_warn "Samba AD DC necesita puerto 53 para funcionar como Domain Controller."
-    echo ""
-    log_info "Opciones:"
-    log_info "  1) Deshabilitar systemd-resolved (recomendado si esta VM es solo para Docker)"
-    log_info "  2) Configurar Samba AD DC para usar un DNS forwarder diferente"
-    echo ""
-    log_ask "¿Deshabilitar systemd-resolved y usar /etc/resolv.conf tradicional? [S/n] "
 
-    read -r RESP
+    # Si el script corre via pipe (curl | bash), stdin no es terminal.
+    # En ese caso deshabilitamos systemd-resolved automáticamente.
+    if [[ -t 0 ]]; then
+        echo ""
+        log_ask "¿Deshabilitar systemd-resolved? [S/n] "
+        read -r RESP || true
+    else
+        log_info "Ejecución no interactiva — deshabilitando systemd-resolved automáticamente"
+        RESP="s"
+    fi
+
     if [[ ! "$RESP" =~ ^[Nn]$ ]]; then
         log_info "Deshabilitando systemd-resolved..."
         systemctl disable --now systemd-resolved 2>/dev/null || true
@@ -597,12 +596,19 @@ done
 if [[ $CONFLICT -gt 0 ]]; then
     log_warn "Hay $CONFLICT puerto(s) en uso que pueden causar conflictos."
     log_warn "Si son servicios del host que no necesitás, detenelos antes de continuar."
-    echo ""
-    log_ask "¿Continuar de todas formas? [s/N] "
-    read -r RESP
-    if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
-        log_info "Saliendo. Liberá los puertos y volvé a ejecutar."
-        exit 0
+
+    if [[ -t 0 ]]; then
+        echo ""
+        log_ask "¿Continuar de todas formas? [s/N] "
+        read -r RESP || true
+        if [[ ! "$RESP" =~ ^[Ss]$ ]]; then
+            log_info "Saliendo. Liberá los puertos y volvé a ejecutar."
+            exit 0
+        fi
+    else
+        log_info "Ejecución no interactiva — continuando con puertos en conflicto"
+        log_info "Si Samba AD DC falla, revisá: ss -tuln | grep ':53 '"
+    fi
     fi
 else
     log_ok "Todos los puertos críticos están libres"
