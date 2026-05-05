@@ -50,6 +50,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    volumes:
+      - "${HOST_APP_DATA_DIR:-/srv/sistemaventas/app-data}:/var/lib/sistemaventas/data"
     networks:
       - app_net
       - data_net
@@ -78,6 +80,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    volumes:
+      - "${HOST_APP_DATA_DIR:-/srv/sistemaventas/app-data}:/var/lib/sistemaventas/data"
     networks:
       - app_net
       - data_net
@@ -200,7 +204,7 @@ services:
       - data_net
       - observability_net
 
-  backup-service:
+  backup-db-service:
     image: postgres:17-alpine
     restart: unless-stopped
     depends_on:
@@ -212,12 +216,47 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-sistemaventas}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-21600}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
-    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+      DB_BACKUP_INTERVAL_SECONDS: ${DB_BACKUP_INTERVAL_SECONDS:-21600}
+      DB_BACKUP_RETENTION_DAYS: ${DB_BACKUP_RETENTION_DAYS:-7}
+    entrypoint: ["/bin/sh", "/scripts/backup-db.sh"]
     volumes:
-      - backups_data:/backups
-      - ./backups/backup.sh:/scripts/backup.sh:ro
+      - "${HOST_BACKUPS_DIR:-/srv/sistemaventas/backups}:/backups"
+      - ./backups/backup-db.sh:/scripts/backup-db.sh:ro
+    networks:
+      - data_net
+
+  backup-files-service:
+    image: alpine:3.20
+    restart: unless-stopped
+    environment:
+      FILES_BACKUP_INTERVAL_SECONDS: ${FILES_BACKUP_INTERVAL_SECONDS:-21600}
+      FILES_BACKUP_RETENTION_DAYS: ${FILES_BACKUP_RETENTION_DAYS:-7}
+      FILES_SOURCE_PATH: /source
+      FILES_ARCHIVE_PREFIX: ${FILES_ARCHIVE_PREFIX:-app-files}
+    entrypoint: ["/bin/sh", "/scripts/backup-files.sh"]
+    volumes:
+      - "${HOST_APP_DATA_DIR:-/srv/sistemaventas/app-data}:/source:ro"
+      - "${HOST_BACKUPS_DIR:-/srv/sistemaventas/backups}:/backups"
+      - ./backups/backup-files.sh:/scripts/backup-files.sh:ro
+    networks:
+      - app_net
+
+  rclone-sync:
+    image: rclone/rclone:latest
+    restart: unless-stopped
+    depends_on:
+      - backup-db-service
+      - backup-files-service
+    environment:
+      RCLONE_REMOTE_NAME: ${RCLONE_REMOTE_NAME:-gdrive}
+      RCLONE_REMOTE_PATH: ${RCLONE_REMOTE_PATH:-sistemaventas/backups}
+      RCLONE_SYNC_MODE: ${RCLONE_SYNC_MODE:-copy}
+      RCLONE_SYNC_INTERVAL_SECONDS: ${RCLONE_SYNC_INTERVAL_SECONDS:-900}
+    entrypoint: ["/bin/sh", "/scripts/rclone-sync.sh"]
+    volumes:
+      - "${HOST_BACKUPS_DIR:-/srv/sistemaventas/backups}:/backups:ro"
+      - "${RCLONE_CONFIG_DIR:-/srv/sistemaventas/rclone}:/config/rclone:ro"
+      - ./backups/rclone-sync.sh:/scripts/rclone-sync.sh:ro
     networks:
       - data_net
 
@@ -319,7 +358,6 @@ volumes:
   samba_users:
   postgres_primary_data:
   postgres_replica_data:
-  backups_data:
   prometheus_data:
   grafana_data:
   loki_data:
