@@ -644,7 +644,6 @@ if [[ $CONFLICT -gt 0 ]]; then
         log_info "Ejecución no interactiva — continuando con puertos en conflicto"
         log_info "Si Samba AD DC falla, revisá: ss -tuln | grep ':53 '"
     fi
-    fi
 else
     log_ok "Todos los puertos críticos están libres"
 fi
