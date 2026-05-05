@@ -178,9 +178,7 @@ dnf install -y \
     gzip \
     bash-completion \
     ca-certificates \
-    policycoreutils-python-utils \
-    ss \
-    net-tools
+    policycoreutils-python-utils
 
 log_ok "Prerequisitos instalados"
 
