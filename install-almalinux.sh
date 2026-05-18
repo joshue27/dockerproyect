@@ -26,6 +26,7 @@
 #        chmod +x install-almalinux.sh
 #        sudo ./install-almalinux.sh
 #   3. Para features opcionales, activalas por variables de entorno. Ejemplos:
+#        sudo SKIP_SYSTEM_UPDATE=1 ./install-almalinux.sh          (si los mirrors están lentos)
 #        sudo ENABLE_FAIL2BAN=1 ENABLE_ANTIMALWARE=1 ./install-almalinux.sh
 #        sudo ENABLE_TLS=1 TLS_CERT_CN=ventas.local ./install-almalinux.sh
 #        sudo ENABLE_DHCP=1 DHCP_INTERFACE=enp0s8 DHCP_SUBNET=192.168.50.0 \
@@ -64,6 +65,7 @@ RCLONE_CONFIG_DIR="${RCLONE_CONFIG_DIR:-/srv/sistemaventas/rclone}"
 HOST_TLS_DIR="${HOST_TLS_DIR:-/srv/sistemaventas/tls}"
 
 # Features opcionales del host (opt-in seguro)
+SKIP_SYSTEM_UPDATE="${SKIP_SYSTEM_UPDATE:-0}"
 ENABLE_DHCP="${ENABLE_DHCP:-0}"
 ENABLE_ANTIMALWARE="${ENABLE_ANTIMALWARE:-0}"
 ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-0}"
@@ -218,42 +220,50 @@ echo ""
 log_ok "Verificaciones iniciales completadas."
 
 # =============================================================================
-# 1. ACTUALIZAR SISTEMA
+# 1. ACTUALIZAR SISTEMA (se puede skipear si los mirrors están lentos)
 # =============================================================================
-log_step "PASO 1: Actualizando paquetes del sistema"
 
-# ─── Fix slow AlmaLinux mirrors ─────────────────────────────────────────
-log_info "Optimizando mirrors de AlmaLinux..."
-sed -i 's/^mirrorlist=/#mirrorlist=/g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
-sed -i 's/^# baseurl=/baseurl=/g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
-sed -i 's|mirrors.almalinux.org|mirrors.cloudflare.com/almalinux|g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
-dnf clean all 2>/dev/null || true
-log_ok "Mirrors cambiados a baseurl directa + Cloudflare"
-
-dnf check-update -y 2>&1 || true  # no falla si no hay updates
-dnf upgrade -y || log_warn "System update skipped (network/mirror issues) — continuing anyway"
-log_ok "Sistema actualizado"
+if is_enabled "$SKIP_SYSTEM_UPDATE"; then
+    log_warn "PASO 1: System update SKIPPED (SKIP_SYSTEM_UPDATE=1)"
+else
+    log_step "PASO 1: Actualizando paquetes del sistema"
+    # ─── Fix slow AlmaLinux mirrors ─────────────────────────────────────
+    sed -i 's/^mirrorlist=/#mirrorlist=/g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
+    sed -i 's/^# baseurl=/baseurl=/g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
+    sed -i 's|mirrors.almalinux.org|mirrors.cloudflare.com/almalinux|g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
+    dnf clean all 2>/dev/null || true
+    dnf check-update -y 2>&1 || true
+    dnf upgrade -y || log_warn "System update failed — continuing anyway"
+    log_ok "Sistema actualizado"
+fi
 
 # =============================================================================
-# 2. INSTALAR PREREQUISITOS
+# 2. INSTALAR PREREQUISITOS (solo lo que falta)
 # =============================================================================
-log_step "PASO 2: Instalando prerequisitos"
+log_step "PASO 2: Verificando prerequisitos"
 
-dnf install -y \
-    dnf-plugins-core \
-    curl \
-    wget \
-    git \
-    unzip \
-    tar \
-    gzip \
-    bash-completion \
-    ca-certificates \
-    openssl \
-    cronie \
-    policycoreutils-python-utils
+# Instalar solo paquetes que NO están presentes
+MISSING_PKGS=""
+for pkg in curl wget git tar gzip openssl; do
+    if ! command -v "$pkg" &>/dev/null; then
+        MISSING_PKGS="$MISSING_PKGS $pkg"
+    fi
+done
 
-log_ok "Prerequisitos instalados"
+# dnf-plugins-core y ca-certificates siempre son necesarios para Docker
+MISSING_PKGS="$MISSING_PKGS dnf-plugins-core ca-certificates"
+
+# cronie, bash-completion, unzip, policycoreutils: opcionales
+for pkg in cronie bash-completion unzip; do
+    command -v "$pkg" &>/dev/null || rpm -q "$pkg" &>/dev/null || MISSING_PKGS="$MISSING_PKGS $pkg"
+done
+
+if [[ -n "$(echo $MISSING_PKGS | tr -d ' ')" ]]; then
+    log_info "Instalando paquetes faltantes:$MISSING_PKGS"
+    dnf install -y $MISSING_PKGS || log_warn "Algunos prerequisitos no se instalaron — puede que igual funcione"
+else
+    log_ok "Todos los prerequisitos ya están instalados"
+fi
 
 # =============================================================================
 # 3. INSTALAR DOCKER CE + DOCKER COMPOSE
