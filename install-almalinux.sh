@@ -222,6 +222,14 @@ log_ok "Verificaciones iniciales completadas."
 # =============================================================================
 log_step "PASO 1: Actualizando paquetes del sistema"
 
+# ─── Fix slow AlmaLinux mirrors ─────────────────────────────────────────
+log_info "Optimizando mirrors de AlmaLinux..."
+sed -i 's/^mirrorlist=/#mirrorlist=/g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
+sed -i 's/^# baseurl=/baseurl=/g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
+sed -i 's|mirrors.almalinux.org|mirrors.cloudflare.com/almalinux|g' /etc/yum.repos.d/almalinux*.repo 2>/dev/null || true
+dnf clean all 2>/dev/null || true
+log_ok "Mirrors cambiados a baseurl directa + Cloudflare"
+
 dnf check-update -y 2>&1 || true  # no falla si no hay updates
 dnf upgrade -y || log_warn "System update skipped (network/mirror issues) — continuing anyway"
 log_ok "Sistema actualizado"
