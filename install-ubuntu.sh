@@ -663,17 +663,29 @@ fi
 # 13. CONFIGURAR TLS/HTTPS (opcional)
 # =============================================================================
 mkdir -p "$PROJECT_DIR/nginx/conf.d"
+mkdir -p "$HOST_TLS_DIR"
 if is_enabled "$ENABLE_TLS"; then
     log_step "PASO 13: Configurando TLS para Nginx"
+
+    if ! command -v openssl &>/dev/null; then
+        log_warn "openssl no encontrado — instalando..."
+        apt-get install -y openssl
+    fi
+
     if [[ ! -f "$HOST_TLS_DIR/fullchain.pem" || ! -f "$HOST_TLS_DIR/privkey.pem" ]]; then
-        openssl req -x509 -nodes -newkey rsa:2048 \
+        log_info "Generando certificado autofirmado (${TLS_CERT_DAYS} días)..."
+        if openssl req -x509 -nodes -newkey rsa:2048 \
             -keyout "$HOST_TLS_DIR/privkey.pem" \
             -out "$HOST_TLS_DIR/fullchain.pem" \
             -days "$TLS_CERT_DAYS" \
-            -subj "/CN=${TLS_CERT_CN}"
-        chmod 600 "$HOST_TLS_DIR/privkey.pem"
-        chmod 644 "$HOST_TLS_DIR/fullchain.pem"
-        log_ok "Certificado autofirmado generado en $HOST_TLS_DIR"
+            -subj "/CN=${TLS_CERT_CN}" 2>/dev/null; then
+            chmod 600 "$HOST_TLS_DIR/privkey.pem"
+            chmod 644 "$HOST_TLS_DIR/fullchain.pem"
+            log_ok "Certificado autofirmado generado en $HOST_TLS_DIR"
+        else
+            log_error "Fallo al generar certificado TLS. Revisá permisos en $HOST_TLS_DIR"
+            exit 1
+        fi
     else
         log_ok "Ya existen certificados TLS en $HOST_TLS_DIR — se reutilizan"
     fi
