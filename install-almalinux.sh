@@ -25,7 +25,12 @@
 #   2. Ejecutá como root desde la raíz del proyecto:
 #        chmod +x install-almalinux.sh
 #        sudo ./install-almalinux.sh
-#   3. Seguí las instrucciones en pantalla
+#   3. Para features opcionales, activalas por variables de entorno. Ejemplos:
+#        sudo ENABLE_FAIL2BAN=1 ENABLE_ANTIMALWARE=1 ./install-almalinux.sh
+#        sudo ENABLE_TLS=1 TLS_CERT_CN=ventas.local ./install-almalinux.sh
+#        sudo ENABLE_DHCP=1 DHCP_INTERFACE=enp0s8 DHCP_SUBNET=192.168.50.0 \
+#             DHCP_RANGE_START=192.168.50.100 DHCP_RANGE_END=192.168.50.150 ./install-almalinux.sh
+#   4. Seguí las instrucciones en pantalla
 #
 # IMPORTANTE:
 #   - El script es IDEMPOTENTE: podés ejecutarlo múltiples veces sin miedo
@@ -56,6 +61,37 @@ COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 APP_DATA_DIR="${APP_DATA_DIR:-/srv/sistemaventas/app-data}"
 BACKUPS_DIR="${BACKUPS_DIR:-/srv/sistemaventas/backups}"
 RCLONE_CONFIG_DIR="${RCLONE_CONFIG_DIR:-/srv/sistemaventas/rclone}"
+HOST_TLS_DIR="${HOST_TLS_DIR:-/srv/sistemaventas/tls}"
+
+# Features opcionales del host (opt-in seguro)
+ENABLE_DHCP="${ENABLE_DHCP:-0}"
+ENABLE_ANTIMALWARE="${ENABLE_ANTIMALWARE:-0}"
+ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-0}"
+ENABLE_TLS="${ENABLE_TLS:-0}"
+
+# DHCP (solo para red aislada / laboratorio)
+DHCP_INTERFACE="${DHCP_INTERFACE:-}"
+DHCP_SUBNET="${DHCP_SUBNET:-}"
+DHCP_NETMASK="${DHCP_NETMASK:-255.255.255.0}"
+DHCP_RANGE_START="${DHCP_RANGE_START:-}"
+DHCP_RANGE_END="${DHCP_RANGE_END:-}"
+DHCP_GATEWAY="${DHCP_GATEWAY:-}"
+DHCP_DNS="${DHCP_DNS:-}"
+DHCP_DOMAIN="${DHCP_DOMAIN:-proyecto.local}"
+
+# Fail2Ban
+FAIL2BAN_MAXRETRY="${FAIL2BAN_MAXRETRY:-5}"
+FAIL2BAN_FINDTIME="${FAIL2BAN_FINDTIME:-10m}"
+FAIL2BAN_BANTIME="${FAIL2BAN_BANTIME:-1h}"
+
+# ClamAV
+ANTIMALWARE_SCAN_DIRS="${ANTIMALWARE_SCAN_DIRS:-/srv/sistemaventas /var/lib/docker/volumes}"
+
+# TLS
+TLS_APP_PORT="${TLS_APP_PORT:-8443}"
+TLS_GRAFANA_PORT="${TLS_GRAFANA_PORT:-8444}"
+TLS_CERT_CN="${TLS_CERT_CN:-sistemaventas.local}"
+TLS_CERT_DAYS="${TLS_CERT_DAYS:-365}"
 
 # ─── Funciones de logging ──────────────────────────────────────────────────
 log_info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
@@ -64,6 +100,33 @@ log_warn()  { echo -e "${YELLOW}[⚠]${NC}   $*"; }
 log_error() { echo -e "${RED}[✘]${NC}  $*"; }
 log_step()  { echo -e "\n${CYAN}${BOLD}═══ $* ═══${NC}"; }
 log_ask()   { echo -e "${YELLOW}[?]${NC}   $*"; }
+
+is_enabled() {
+    case "${1,,}" in
+        1|true|yes|on|si|sí|s) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ensure_epel() {
+    if ! rpm -q epel-release &>/dev/null; then
+        log_info "Instalando repositorio EPEL..."
+        dnf install -y epel-release
+    fi
+}
+
+ensure_env_var() {
+    local key="$1"
+    local value="$2"
+    local tmp
+
+    tmp="$(mktemp)"
+    if [[ -f "$ENV_FILE" ]]; then
+        grep -v "^${key}=" "$ENV_FILE" > "$tmp" || true
+    fi
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+    mv "$tmp" "$ENV_FILE"
+}
 
 # ─── Banner ────────────────────────────────────────────────────────────────
 clear 2>/dev/null || true
@@ -160,7 +223,7 @@ log_ok "Verificaciones iniciales completadas."
 log_step "PASO 1: Actualizando paquetes del sistema"
 
 dnf check-update -y 2>&1 || true  # no falla si no hay updates
-dnf upgrade -y
+dnf upgrade -y || log_warn "System update skipped (network/mirror issues) — continuing anyway"
 log_ok "Sistema actualizado"
 
 # =============================================================================
@@ -178,6 +241,8 @@ dnf install -y \
     gzip \
     bash-completion \
     ca-certificates \
+    openssl \
+    cronie \
     policycoreutils-python-utils
 
 log_ok "Prerequisitos instalados"
@@ -361,7 +426,7 @@ if [[ "$SELINUX_MODE" == "Enforcing" ]]; then
     dnf install -y container-selinux 2>/dev/null || true
 
     # Crear directorios host si no existen
-    mkdir -p "$APP_DATA_DIR" "$BACKUPS_DIR" "$RCLONE_CONFIG_DIR"
+    mkdir -p "$APP_DATA_DIR" "$BACKUPS_DIR" "$RCLONE_CONFIG_DIR" "$HOST_TLS_DIR"
 
     # Aplicar contexto container_file_t a los directorios de datos persistentes
     # Esto permite que los contenedores Docker lean/escriban en estos paths
@@ -369,7 +434,8 @@ if [[ "$SELINUX_MODE" == "Enforcing" ]]; then
     semanage fcontext -a -t container_file_t "${APP_DATA_DIR}(/.*)?" 2>/dev/null || true
     semanage fcontext -a -t container_file_t "${BACKUPS_DIR}(/.*)?" 2>/dev/null || true
     semanage fcontext -a -t container_file_t "${RCLONE_CONFIG_DIR}(/.*)?" 2>/dev/null || true
-    restorecon -Rv "$APP_DATA_DIR" "$BACKUPS_DIR" "$RCLONE_CONFIG_DIR" 2>/dev/null || true
+    semanage fcontext -a -t container_file_t "${HOST_TLS_DIR}(/.*)?" 2>/dev/null || true
+    restorecon -Rv "$APP_DATA_DIR" "$BACKUPS_DIR" "$RCLONE_CONFIG_DIR" "$HOST_TLS_DIR" 2>/dev/null || true
 
     # Para los bind mounts del directorio del proyecto (nginx configs, scripts, etc.)
     # Docker con SELinux enforcing puede bloquear el acceso a estos archivos.
@@ -407,11 +473,13 @@ log_step "PASO 8: Creando estructura de directorios host"
 mkdir -p "$APP_DATA_DIR"
 mkdir -p "$BACKUPS_DIR"/{db,files}
 mkdir -p "$RCLONE_CONFIG_DIR"
+mkdir -p "$HOST_TLS_DIR"
 
 log_ok "Directorios creados:"
 log_info "  Datos de app:    $APP_DATA_DIR"
 log_info "  Backups:         $BACKUPS_DIR"
 log_info "  Rclone config:   $RCLONE_CONFIG_DIR"
+log_info "  Certificados:    $HOST_TLS_DIR"
 
 # =============================================================================
 # 8. CONFIGURAR ARCHIVO .ENV
@@ -449,6 +517,8 @@ REPLICATION_PASSWORD=cambiar_replication_password_ya
 
 # ─── App ───
 SESSION_SECRET=cambiar_este_secreto_ya
+FORCE_SECURE_COOKIES=false
+TRUST_PROXY=true
 
 # ─── Samba AD DC ───
 SAMBA_DOMAIN=proyecto.local
@@ -466,6 +536,9 @@ GRAFANA_ADMIN_PASSWORD=admin123
 HOST_APP_DATA_DIR=/srv/sistemaventas/app-data
 HOST_BACKUPS_DIR=/srv/sistemaventas/backups
 RCLONE_CONFIG_DIR=/srv/sistemaventas/rclone
+HOST_TLS_DIR=/srv/sistemaventas/tls
+TLS_APP_PORT=8443
+TLS_GRAFANA_PORT=8444
 
 # ─── Backups automáticos ───
 DB_BACKUP_INTERVAL_SECONDS=21600
@@ -498,10 +571,205 @@ ENVEOF
     echo ""
 fi
 
+ensure_env_var "HOST_APP_DATA_DIR" "$APP_DATA_DIR"
+ensure_env_var "HOST_BACKUPS_DIR" "$BACKUPS_DIR"
+ensure_env_var "RCLONE_CONFIG_DIR" "$RCLONE_CONFIG_DIR"
+ensure_env_var "HOST_TLS_DIR" "$HOST_TLS_DIR"
+ensure_env_var "TLS_APP_PORT" "$TLS_APP_PORT"
+ensure_env_var "TLS_GRAFANA_PORT" "$TLS_GRAFANA_PORT"
+if is_enabled "$ENABLE_TLS"; then
+    ensure_env_var "FORCE_SECURE_COOKIES" "true"
+else
+    ensure_env_var "FORCE_SECURE_COOKIES" "false"
+fi
+ensure_env_var "TRUST_PROXY" "true"
+
 # =============================================================================
-# 9. PULL DE IMÁGENES DOCKER
+# 9. CONFIGURAR FAIL2BAN (opcional)
 # =============================================================================
-log_step "PASO 10: Descargando imágenes Docker"
+if is_enabled "$ENABLE_FAIL2BAN"; then
+    log_step "PASO 10: Configurando Fail2Ban para SSH"
+    ensure_epel
+    dnf install -y fail2ban fail2ban-firewalld
+    mkdir -p /etc/fail2ban/jail.d
+    cat > /etc/fail2ban/jail.d/sistemaventas-sshd.local <<EOF
+[DEFAULT]
+bantime = ${FAIL2BAN_BANTIME}
+findtime = ${FAIL2BAN_FINDTIME}
+maxretry = ${FAIL2BAN_MAXRETRY}
+banaction = firewallcmd-ipset
+backend = systemd
+
+[sshd]
+enabled = true
+port = ssh
+logpath = %(sshd_log)s
+EOF
+    systemctl enable --now fail2ban
+    fail2ban-client status sshd 2>/dev/null || true
+    log_ok "Fail2Ban configurado para proteger SSH"
+else
+    log_info "Fail2Ban omitido (ENABLE_FAIL2BAN=0)"
+fi
+
+# =============================================================================
+# 10. CONFIGURAR ANTIMALWARE (opcional)
+# =============================================================================
+if is_enabled "$ENABLE_ANTIMALWARE"; then
+    log_step "PASO 11: Configurando antimalware ClamAV"
+    ensure_epel
+    dnf install -y clamav clamav-update
+    mkdir -p /var/log/clamav
+    sed -i 's/^Example/#Example/' /etc/freshclam.conf 2>/dev/null || true
+    freshclam || log_warn "freshclam no pudo actualizar firmas ahora mismo; revisalo luego"
+    cat > /etc/cron.d/sistemaventas-clamav <<EOF
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+15 2 * * * root freshclam --quiet && clamscan -ri --log=/var/log/clamav/sistemaventas-scan.log ${ANTIMALWARE_SCAN_DIRS}
+EOF
+    systemctl enable --now crond
+    log_ok "ClamAV configurado con actualización y escaneo diario"
+else
+    log_info "Antimalware omitido (ENABLE_ANTIMALWARE=0)"
+fi
+
+# =============================================================================
+# 11. CONFIGURAR DHCP (opcional, solo red aislada)
+# =============================================================================
+if is_enabled "$ENABLE_DHCP"; then
+    log_step "PASO 12: Configurando DHCP para laboratorio aislado"
+    if [[ -z "$DHCP_INTERFACE" || -z "$DHCP_SUBNET" || -z "$DHCP_RANGE_START" || -z "$DHCP_RANGE_END" ]]; then
+        log_error "Para ENABLE_DHCP=1 necesitás definir DHCP_INTERFACE, DHCP_SUBNET, DHCP_RANGE_START y DHCP_RANGE_END"
+        exit 1
+    fi
+
+    ensure_epel
+    dnf install -y dhcp-server
+
+    DHCP_SERVER_IP=$(ip -4 -o addr show dev "$DHCP_INTERFACE" | awk '{split($4,a,"/"); print a[1]}' | head -1)
+    DHCP_DNS_VALUE="$DHCP_DNS"
+    if [[ -z "$DHCP_DNS_VALUE" ]]; then
+        DHCP_DNS_VALUE="${DHCP_SERVER_IP:-1.1.1.1}"
+    fi
+
+    cat > /etc/dhcp/dhcpd.conf <<EOF
+authoritative;
+default-lease-time 600;
+max-lease-time 7200;
+option domain-name "${DHCP_DOMAIN}";
+option domain-name-servers ${DHCP_DNS_VALUE};
+
+subnet ${DHCP_SUBNET} netmask ${DHCP_NETMASK} {
+  range ${DHCP_RANGE_START} ${DHCP_RANGE_END};
+  option subnet-mask ${DHCP_NETMASK};
+EOF
+    if [[ -n "$DHCP_GATEWAY" ]]; then
+        echo "  option routers ${DHCP_GATEWAY};" >> /etc/dhcp/dhcpd.conf
+    fi
+    echo "}" >> /etc/dhcp/dhcpd.conf
+
+    cat > /etc/sysconfig/dhcpd <<EOF
+DHCPDARGS=${DHCP_INTERFACE}
+EOF
+
+    firewall-cmd --permanent --add-service=dhcp 2>/dev/null || firewall-cmd --permanent --add-port=67/udp 2>/dev/null || true
+    firewall-cmd --reload
+    systemctl enable --now dhcpd
+    log_warn "DHCP habilitado. Usalo SOLO en red aislada / host-only / laboratorio."
+    log_ok "DHCP configurado sobre interfaz ${DHCP_INTERFACE}"
+else
+    log_info "DHCP omitido (ENABLE_DHCP=0)"
+fi
+
+# =============================================================================
+# 12. CONFIGURAR TLS/HTTPS (opcional)
+# =============================================================================
+mkdir -p "$PROJECT_DIR/nginx/conf.d"
+if is_enabled "$ENABLE_TLS"; then
+    log_step "PASO 13: Configurando TLS para Nginx"
+    if [[ ! -f "$HOST_TLS_DIR/fullchain.pem" || ! -f "$HOST_TLS_DIR/privkey.pem" ]]; then
+        openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout "$HOST_TLS_DIR/privkey.pem" \
+            -out "$HOST_TLS_DIR/fullchain.pem" \
+            -days "$TLS_CERT_DAYS" \
+            -subj "/CN=${TLS_CERT_CN}"
+        chmod 600 "$HOST_TLS_DIR/privkey.pem"
+        chmod 644 "$HOST_TLS_DIR/fullchain.pem"
+        log_ok "Certificado autofirmado generado en $HOST_TLS_DIR"
+    else
+        log_ok "Ya existen certificados TLS en $HOST_TLS_DIR — se reutilizan"
+    fi
+
+    cat > "$PROJECT_DIR/nginx/conf.d/https.conf" <<'EOF'
+server {
+  listen 443 ssl;
+  server_name _;
+
+  ssl_certificate /etc/nginx/certs/fullchain.pem;
+  ssl_certificate_key /etc/nginx/certs/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers on;
+
+  location /health {
+    access_log off;
+    return 200 'ok';
+    add_header Content-Type text/plain;
+  }
+
+  location / {
+    proxy_pass http://sistemaventas_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Connection "";
+  }
+}
+
+server {
+  listen 444 ssl;
+  server_name _;
+
+  ssl_certificate /etc/nginx/certs/fullchain.pem;
+  ssl_certificate_key /etc/nginx/certs/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers on;
+
+  location /health {
+    access_log off;
+    return 200 'ok';
+    add_header Content-Type text/plain;
+  }
+
+  location / {
+    proxy_pass http://grafana:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Connection "";
+  }
+}
+EOF
+
+    firewall-cmd --permanent --add-port="${TLS_APP_PORT}/tcp" 2>/dev/null || true
+    firewall-cmd --permanent --add-port="${TLS_GRAFANA_PORT}/tcp" 2>/dev/null || true
+    firewall-cmd --reload
+    log_ok "TLS/HTTPS configurado para aplicación y Grafana"
+else
+    cat > "$PROJECT_DIR/nginx/conf.d/https.conf" <<'EOF'
+# TLS opcional deshabilitado.
+# install-almalinux.sh reemplaza este archivo cuando ENABLE_TLS=1.
+EOF
+    log_info "TLS omitido (ENABLE_TLS=0)"
+fi
+
+# =============================================================================
+# 13. PULL DE IMÁGENES DOCKER
+# =============================================================================
+log_step "PASO 14: Descargando imágenes Docker"
 
 log_info "Esto puede tardar varios minutos la primera vez..."
 cd "$PROJECT_DIR"
@@ -575,9 +843,7 @@ log_step "PASO 12: Verificando systemd-resolved (conflicto DNS con Samba AD DC)"
 # systemd-resolved escucha en 127.0.0.53:53 y puede bloquear el puerto 53.
 # Samba AD DC necesita el puerto 53 para su propio servidor DNS.
 
-RESOLVED_ACTIVE=false
 if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
-    RESOLVED_ACTIVE=true
     log_warn "systemd-resolved está activo y PUEDE bloquear el puerto 53 (DNS)."
     log_warn "Samba AD DC necesita puerto 53 para funcionar como Domain Controller."
 
@@ -680,7 +946,6 @@ while [[ $WAITED -lt $MAX_WAIT ]]; do
     TOTAL=$(docker compose ps -q 2>/dev/null | wc -l)
     # Filter healthy status, ignoring services without health checks
     HEALTHY=$(docker compose ps --format json 2>/dev/null | grep -c '"Health":"healthy"' || true)
-    STARTING=$(docker compose ps --format json 2>/dev/null | grep -c '"Health":"starting"' || true)
     UNHEALTHY=$(docker compose ps --format json 2>/dev/null | grep -c '"Health":"unhealthy"' || true)
 
     # Count services that have a health check defined (exclude "unknown" health)
@@ -740,9 +1005,15 @@ echo -e "${GREEN}${BOLD}  Stack funcionando. URLs de acceso:${NC}"
 echo ""
 echo -e "  ${CYAN}Aplicación (Sistema Ventas):${NC}"
 echo -e "    http://${SERVER_IP}:8080"
+if is_enabled "$ENABLE_TLS"; then
+    echo -e "    https://${SERVER_IP}:${TLS_APP_PORT}  (autofirmado si no cargaste uno propio)"
+fi
 echo ""
 echo -e "  ${CYAN}Grafana (Monitoreo):${NC}"
 echo -e "    http://${SERVER_IP}:8081"
+if is_enabled "$ENABLE_TLS"; then
+    echo -e "    https://${SERVER_IP}:${TLS_GRAFANA_PORT}"
+fi
 echo -e "    Usuario: admin"
 echo -e "    Password: admin123  (cambiala en .env)"
 echo ""
@@ -753,6 +1024,18 @@ echo -e "    Admin:     Administrator"
 echo -e "    Password:  ${SAMBA_ADMIN_PASSWORD:-Admin123!}"
 echo -e "    Administración: solo por CLI / RSAT (sin interfaz web)"
 echo ""
+if is_enabled "$ENABLE_FAIL2BAN"; then
+    echo -e "  ${CYAN}Fail2Ban:${NC} activo para SSH"
+fi
+if is_enabled "$ENABLE_ANTIMALWARE"; then
+    echo -e "  ${CYAN}ClamAV:${NC} actualización + escaneo diario configurados"
+fi
+if is_enabled "$ENABLE_DHCP"; then
+    echo -e "  ${CYAN}DHCP:${NC} activo en ${DHCP_INTERFACE} para red ${DHCP_SUBNET}/${DHCP_NETMASK}"
+fi
+if is_enabled "$ENABLE_FAIL2BAN" || is_enabled "$ENABLE_ANTIMALWARE" || is_enabled "$ENABLE_DHCP"; then
+    echo ""
+fi
 
 # ─── Comandos útiles ───
 log_step "COMANDOS ÚTILES"
@@ -794,6 +1077,9 @@ echo "     Luego: ${BOLD}docker compose up -d${NC} (recrea servicios si cambiaro
 echo ""
 echo "  2. Verificá que la app responda:"
 echo -e "     ${BOLD}curl -s http://localhost:8080 | head -20${NC}"
+if is_enabled "$ENABLE_TLS"; then
+    echo -e "     ${BOLD}curl -k https://localhost:${TLS_APP_PORT} | head -20${NC}"
+fi
 echo ""
 echo "  3. Configurá dashboards en Grafana:"
 echo -e "     Entrá a http://${SERVER_IP}:8081 y explorá los datasources pre-configurados"
@@ -807,6 +1093,21 @@ echo ""
 echo "  6. Configurá rclone para backup en la nube (opcional):"
 echo -e "     ${BOLD}docker run --rm -v ${RCLONE_CONFIG_DIR}:/config/rclone rclone/rclone config${NC}"
 echo ""
+if is_enabled "$ENABLE_FAIL2BAN"; then
+    echo "  7. Revisá el jail de SSH en Fail2Ban:"
+    echo -e "     ${BOLD}fail2ban-client status sshd${NC}"
+    echo ""
+fi
+if is_enabled "$ENABLE_ANTIMALWARE"; then
+    echo "  8. Forzá un escaneo manual de ClamAV si querés validar seguridad:"
+    echo -e "     ${BOLD}freshclam && clamscan -ri ${ANTIMALWARE_SCAN_DIRS}${NC}"
+    echo ""
+fi
+if is_enabled "$ENABLE_DHCP"; then
+    echo "  9. Verificá leases DHCP en la red aislada:"
+    echo -e "     ${BOLD}journalctl -u dhcpd --no-pager | tail -50${NC}"
+    echo ""
+fi
 
 log_step "INSTALACIÓN COMPLETADA"
 echo ""
