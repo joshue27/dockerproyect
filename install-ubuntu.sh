@@ -25,12 +25,9 @@
 #   2. Ejecutá como root desde la raíz del proyecto:
 #        chmod +x install-ubuntu.sh
 #        sudo ./install-ubuntu.sh
-#   3. Para features opcionales, activalas por variables de entorno. Ejemplos:
-#        sudo SKIP_SYSTEM_UPDATE=1 ./install-ubuntu.sh
-#        sudo ENABLE_FAIL2BAN=1 ENABLE_ANTIMALWARE=1 ./install-ubuntu.sh
-#        sudo ENABLE_TLS=1 TLS_CERT_CN=ventas.local ./install-ubuntu.sh
-#        sudo ENABLE_DHCP=1 DHCP_INTERFACE=enp0s8 DHCP_SUBNET=192.168.50.0 \
-#             DHCP_RANGE_START=192.168.50.100 DHCP_RANGE_END=192.168.50.150 ./install-ubuntu.sh
+#   3. Por defecto vienen activados TLS, Fail2Ban y ClamAV.
+#      Para desactivarlos: sudo ENABLE_TLS=0 ... ./install-ubuntu.sh
+#      Para DHCP (requiere interfaz host-only): sudo ENABLE_DHCP=1 DHCP_INTERFACE=enp0s8 ...
 #   4. Seguí las instrucciones en pantalla
 #
 # IMPORTANTE:
@@ -64,12 +61,13 @@ BACKUPS_DIR="${BACKUPS_DIR:-/srv/sistemaventas/backups}"
 RCLONE_CONFIG_DIR="${RCLONE_CONFIG_DIR:-/srv/sistemaventas/rclone}"
 HOST_TLS_DIR="${HOST_TLS_DIR:-/srv/sistemaventas/tls}"
 
-# Features opcionales del host (opt-in seguro)
+# Features de seguridad y hardening (activadas por defecto)
 SKIP_SYSTEM_UPDATE="${SKIP_SYSTEM_UPDATE:-0}"
+ENABLE_TLS="${ENABLE_TLS:-1}"
+ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-1}"
+ENABLE_ANTIMALWARE="${ENABLE_ANTIMALWARE:-1}"
+# DHCP requiere configurar interfaz — se mantiene opt-in
 ENABLE_DHCP="${ENABLE_DHCP:-0}"
-ENABLE_ANTIMALWARE="${ENABLE_ANTIMALWARE:-0}"
-ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-0}"
-ENABLE_TLS="${ENABLE_TLS:-0}"
 
 # DHCP (solo para red aislada / laboratorio)
 DHCP_INTERFACE="${DHCP_INTERFACE:-}"
