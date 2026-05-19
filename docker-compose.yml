@@ -283,7 +283,7 @@ services:
       - admin_net
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:11.6.1
     restart: unless-stopped
     user: "0"
     depends_on:
