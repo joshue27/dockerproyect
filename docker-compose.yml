@@ -147,6 +147,18 @@ services:
       - "3269:3269/tcp"
       - "50000-50050:50000-50050/tcp"
 
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    restart: unless-stopped
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: "samba-ad-dc"
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8082:80"
+    networks:
+      - identity_net
+      - edge_net
+
   postgres-primary:
     image: postgres:17-alpine
     restart: unless-stopped
