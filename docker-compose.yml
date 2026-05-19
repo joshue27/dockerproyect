@@ -285,6 +285,7 @@ services:
   grafana:
     image: grafana/grafana-oss:latest
     restart: unless-stopped
+    user: "0"
     depends_on:
       - prometheus
       - loki
@@ -292,11 +293,12 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
       GF_SERVER_HTTP_PORT: 3000
+      GF_SERVER_ENABLE_PROCESS_CHECK: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health || exit 1"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 15s
       timeout: 5s
       retries: 10
