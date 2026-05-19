@@ -110,18 +110,27 @@ services:
       - observability_net
 
   samba-ad-dc:
-    image: instantlinux/samba-dc:latest
+    image: linuxcrafts/samba-ad-dc:latest
     hostname: ${SAMBA_NETBIOS_NAME:-DC01}
     restart: unless-stopped
     privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_RESOURCE
+      - SYS_PTRACE
     environment:
-      DOMAIN: ${SAMBA_DOMAIN:-proyecto.local}
+      DNS_DOMAIN: ${SAMBA_DOMAIN:-proyecto.local}
       DNS_FORWARDER: ${SAMBA_DNS_FORWARDER:-1.1.1.1}
-    secrets:
-      - ADMIN_PASSWORD_SECRET
+      WORKGROUP: ${SAMBA_WORKGROUP:-PROYECTO}
+      REALM: ${SAMBA_REALM:-PROYECTO.LOCAL}
+      NETBIOS_NAME: ${SAMBA_NETBIOS_NAME:-DC01}
+      ADMIN_PASSWORD: ${SAMBA_ADMIN_PASSWORD:-Admin123!}
+      DNS_BACKEND: SAMBA_INTERNAL
+      FUNCTION_LEVEL: 2008_R2
+      SAMBA_OPTIONS: "--debuglevel=2"
     volumes:
-      - samba_data:/var/lib/samba
-      - samba_users:/etc/samba
+      - samba_data:/samba
+      - samba_users:/users
     networks:
       - edge_net
       - identity_net
@@ -435,7 +444,3 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
-
-secrets:
-  ADMIN_PASSWORD_SECRET:
-    environment: SAMBA_ADMIN_PASSWORD
