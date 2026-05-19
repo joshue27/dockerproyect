@@ -110,23 +110,18 @@ services:
       - observability_net
 
   samba-ad-dc:
-    image: linuxcrafts/samba-ad-dc:latest
+    image: stilliard/samba-ad-dc:latest
     hostname: ${SAMBA_NETBIOS_NAME:-DC01}
     restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
+    privileged: true
     environment:
-      DNS_DOMAIN: ${SAMBA_DOMAIN:-proyecto.local}
-      DNS_FORWARDER: ${SAMBA_DNS_FORWARDER:-1.1.1.1}
-      WORKGROUP: ${SAMBA_WORKGROUP:-PROYECTO}
-      REALM: ${SAMBA_REALM:-PROYECTO.LOCAL}
-      NETBIOS_NAME: ${SAMBA_NETBIOS_NAME:-DC01}
-      ADMIN_PASSWORD: ${SAMBA_ADMIN_PASSWORD:-Admin123!}
-      DNS_BACKEND: SAMBA_INTERNAL
-      FUNCTION_LEVEL: 2008_R2
+      DOMAIN: ${SAMBA_DOMAIN:-proyecto.local}
+      DOMAINPASS: ${SAMBA_ADMIN_PASSWORD:-Admin123!}
+      DNSFORWARD: ${SAMBA_DNS_FORWARDER:-1.1.1.1}
+      NOCOMPLEXITY: "true"
     volumes:
-      - samba_data:/samba
-      - samba_users:/users
+      - samba_data:/var/lib/samba
+      - samba_users:/etc/samba
     networks:
       - edge_net
       - identity_net
@@ -141,11 +136,9 @@ services:
       - "445:445/tcp"
       - "464:464/tcp"
       - "464:464/udp"
-      - "123:123/udp"
       - "636:636/tcp"
       - "3268:3268/tcp"
       - "3269:3269/tcp"
-      - "50000-50050:50000-50050/tcp"
 
   phpldapadmin:
     image: osixia/phpldapadmin:0.9.0
