@@ -110,15 +110,16 @@ services:
       - observability_net
 
   samba-ad-dc:
-    image: stilliard/samba-ad-dc:latest
+    image: instantlinux/samba-dc:latest
     hostname: ${SAMBA_NETBIOS_NAME:-DC01}
     restart: unless-stopped
     privileged: true
     environment:
       DOMAIN: ${SAMBA_DOMAIN:-proyecto.local}
-      DOMAINPASS: ${SAMBA_ADMIN_PASSWORD:-Admin123!}
-      DNSFORWARD: ${SAMBA_DNS_FORWARDER:-1.1.1.1}
-      NOCOMPLEXITY: "true"
+      DOMAIN_ADMIN_PASSWORD: ${SAMBA_ADMIN_PASSWORD:-Admin123!}
+      DNS_FORWARDER: ${SAMBA_DNS_FORWARDER:-1.1.1.1}
+      REALM: ${SAMBA_REALM:-PROYECTO.LOCAL}
+      BIND_INTERFACES_ONLY: "yes"
     volumes:
       - samba_data:/var/lib/samba
       - samba_users:/etc/samba
