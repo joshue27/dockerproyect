@@ -8,6 +8,11 @@ const { getRedisClient } = require('./config/redis');
 
 const app = express();
 const redisClient = getRedisClient(env.redisUrl);
+
+if (env.trustProxy) {
+  app.set('trust proxy', 1);
+}
+
 const sessionConfig = {
   secret: env.sessionSecret,
   resave: false,
@@ -15,7 +20,7 @@ const sessionConfig = {
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: env.forceSecureCookies,
     maxAge: 1000 * 60 * 60 * 8
   }
 };
