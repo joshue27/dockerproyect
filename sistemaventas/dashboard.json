@@ -184,67 +184,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 280
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "text",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Status"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "thresholds"
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "options": {
-                      "true": {
-                        "color": "green",
-                        "text": "UP"
-                      },
-                      "false": {
-                        "color": "red",
-                        "text": "DOWN"
-                      }
-                    },
-                    "type": "value"
-                  }
-                ]
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green"
-                    },
-                    {
-                      "color": "red",
-                      "value": 1
-                    }
-                  ]
-                }
+                "value": 300
               }
             ]
           },
@@ -255,12 +195,22 @@
             },
             "properties": [
               {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
                 "id": "custom.width",
-                "value": 80
+                "value": 100
               },
               {
                 "id": "unit",
                 "value": "s"
+              },
+              {
+                "id": "displayName",
+                "value": "Last Seen"
               }
             ]
           }
@@ -268,7 +218,7 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 7,
+        "w": 6,
         "x": 5,
         "y": 1
       },
@@ -299,7 +249,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "time() - container_last_seen{name=~\"dockerproyect-.*\"}",
+          "expr": "time() - container_last_seen{name=~\".+\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -319,23 +269,10 @@
               "instance": true,
               "job": true
             },
-            "indexByName": {},
             "renameByName": {
               "Value": "Age",
               "name": "Container"
             }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "Status",
-            "binary": {
-              "left": "Age",
-              "operator": "<",
-              "right": "30"
-            },
-            "mode": "binary"
           }
         }
       ],
