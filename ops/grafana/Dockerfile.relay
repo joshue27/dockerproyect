@@ -1,0 +1,5 @@
+FROM python:3-alpine
+WORKDIR /app
+COPY telegram-relay.py /app/relay.py
+EXPOSE 9876
+CMD ["python3", "/app/relay.py"]

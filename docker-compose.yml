@@ -301,6 +301,20 @@ services:
       - data_net
       - edge_net # necesita internet para Google APIs
 
+  telegram-relay:
+    build:
+      context: ./ops/grafana
+      dockerfile: Dockerfile.relay
+    image: sistemaventas-telegram-relay:local
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      RELAY_PORT: "9876"
+    networks:
+      - admin_net
+      - edge_net
+
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
@@ -347,7 +361,7 @@ services:
     networks:
       - observability_net
       - admin_net
-      - edge_net  # internet para alertas Telegram
+      - edge_net # internet para alertas Telegram
 
   loki:
     image: grafana/loki:latest
