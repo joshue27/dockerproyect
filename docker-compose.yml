@@ -299,7 +299,7 @@ services:
       - ./backups/rclone-sync.sh:/scripts/rclone-sync.sh:ro
     networks:
       - data_net
-      - edge_net  # necesita internet para Google APIs
+      - edge_net # necesita internet para Google APIs
 
   prometheus:
     image: prom/prometheus:latest
@@ -382,6 +382,12 @@ services:
       - --path.sysfs=/host/sys
       - --path.rootfs=/rootfs
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/lxc/.+)($|/)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - observability_net
 

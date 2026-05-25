@@ -1,0 +1,142 @@
+======================================================================
+  SISTEMA DE VENTAS — BEBIDAS Y ABARROTES S.A.
+  DEMO CHEAT SHEET
+  Sistemas Operativos II — Mayo 2026
+======================================================================
+
+  IP del servidor:  (ejecutar: hostname -I | awk '{print $1}')
+======================================================================
+
+
+1. ACCESOS RAPIDOS
+======================================================================
+
+  SERVICIO          URL                                CREDENCIALES
+  ----------        ------------------------------     ----------------------
+  App Web           http://IP:8080                      admin / demo-admin
+                    https://IP:8443                     caja01 / demo-vendedor
+
+  Grafana           http://IP:8081                      admin / admin123
+                    https://IP:8444
+
+  phpLDAPadmin      http://IP:8082                      CN=Administrator,CN=Users,
+                                                        DC=proyecto,DC=local
+                                                        / Admin123!
+
+
+2. COMANDOS ESENCIALES PARA LA DEMO
+======================================================================
+
+  VER ESTADO DEL STACK
+  --------------------
+  docker compose ps                          # Todos los servicios
+  docker compose ps app1 app2                # Apps especificas
+  docker compose logs -f samba-ad-dc         # Logs de Samba en vivo
+  docker compose logs --tail=10 app1         # Ultimas 10 lineas de app
+
+  CREAR USUARIO EN SAMBA AD DC
+  ----------------------------
+  docker compose exec samba-ad-dc samba-tool user create vendedor2 Venta2026! --given-name=Vendedor --surname=Dos -s /samba/etc/smb.conf
+
+  LISTAR USUARIOS DEL DOMINIO
+  ---------------------------
+  docker compose exec samba-ad-dc samba-tool user list -s /samba/etc/smb.conf
+
+  CREAR USUARIO EN LA APP (desde la interfaz web)
+  -------------------------------------------------
+  Login como admin  Ir a Usuarios  Nuevo
+
+  CONSULTAR BASE DE DATOS
+  -----------------------
+  docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) FROM app.products;'
+  docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.products ORDER BY id LIMIT 5;'
+
+  VERIFICAR REPLICACION POSTGRESQL
+  --------------------------------
+  docker compose exec postgres-primary psql -U postgres -c "SELECT client_addr, state, sync_state FROM pg_stat_replication;"
+
+  VER SESIONES EN REDIS
+  ---------------------
+  docker compose exec redis redis-cli KEYS 'sistemaventas:sess:*'
+  docker compose exec redis redis-cli INFO memory | grep used_memory_human
+
+  BACKUP MANUAL
+  -------------
+  docker compose exec backup-db-service sh -c 'pg_dump -h postgres-primary -U postgres -d sistemaventas | gzip > /backups/db/manual.sql.gz'
+
+  VER BACKUPS EN GOOGLE DRIVE (via rclone)
+  ----------------------------------------
+  docker compose exec rclone-sync rclone ls gdrive:sistemaventas/backups --config /config/rclone/rclone.conf
+
+
+3. DEMO DE ALTA DISPONIBILIDAD
+======================================================================
+
+  PASO 1: Ver estado actual
+  -------------------------
+  docker compose ps app1 app2
+  (ambas healthy)
+
+  PASO 2: DETENER app1 (simular caida)
+  ------------------------------------
+  docker compose stop app1
+  curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:8080/health
+  (debe responder 200  app2 sigue sirviendo)
+  Mirar Grafana  app1 se pone ROJA / aumento edad
+
+  PASO 3: RECUPERAR app1
+  -----------------------
+  docker compose start app1
+  sleep 5
+  docker compose ps app1 app2
+  (app1 vuelve a healthy  verde en Grafana)
+
+
+4. COMANDOS DE EMERGENCIA
+======================================================================
+
+  REINICIAR TODO EL STACK
+  -----------------------
+  docker compose restart
+
+  BAJAR TODO (sin perder datos)
+  -----------------------------
+  docker compose down
+
+  BAJAR TODO Y BORRAR VOLUMENES (pierde datos!)
+  ----------------------------------------------
+  docker compose down -v
+
+  VER LOGS DE UN SERVICIO
+  -----------------------
+  docker compose logs -f [servicio]
+
+  REINICIAR UN SERVICIO
+  ---------------------
+  docker compose restart [servicio]
+
+
+5. MONITOREO EN GRAFANA
+======================================================================
+
+  PANEL                    QUE MUESTRA
+  ------------------       -------------------------------------------
+  Service Status           PostgreSQL, Redis, Prometheus (verde/rojo)
+  Containers               Todos los containers con barra de color
+  Healthy / Unhealthy      Contadores de servicios
+  Host / VM                CPU, RAM, Disco, Uptime
+  Containers CPU & Memory  CPU y RAM por container (cAdvisor)
+  PostgreSQL               Conexiones, transacciones, cache hit ratio
+  Redis                    Memoria, clientes conectados, comandos/s
+  Logs                     Logs centralizados (Loki)
+
+
+6. NOTAS
+======================================================================
+
+  - rclone-sync sube backups a Google Drive cada 15 min
+  - Los backups locales estan en /srv/sistemaventas/backups/
+  - phpLDAPadmin cierra sesion solo, hay que volver a loguear
+  - Si un paso del demo falla, segui al siguiente (la demo no se corta)
+  - Los dashboards de Grafana se importan desde sistemaventas/dashboard.json
+======================================================================
