@@ -259,16 +259,19 @@
       "title": "Containers",
       "transformations": [
         {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "name",
+                "Value"
+              ]
+            }
+          }
+        },
+        {
           "id": "organize",
           "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "id": true,
-              "image": true,
-              "instance": true,
-              "job": true
-            },
             "renameByName": {
               "Value": "Age",
               "name": "Container"
