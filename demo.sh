@@ -272,24 +272,29 @@ echo -e "    2. Pegar el JSON del archivo dockerproyect-dashboard.json"
 echo -e "    3. Seleccionar datasource Prometheus y Loki"
 echo ""
 
-step "8.1 Scrape targets de Prometheus"
-cmd "curl -s http://localhost:9090/api/v1/targets | python3 -m json.tool 2>/dev/null | grep -E 'job|health' | head -20 || curl -s http://localhost:9090/api/v1/targets 2>/dev/null | head -5 || echo '  (Prometheus no responde) '"
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:9090 2>/dev/null | grep -q 200; then
-	TARGETS_UP=$(curl -s http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '"health":"up"' | wc -l)
-	TARGETS_DOWN=$(curl -s http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '"health":"down"' | wc -l)
+step "8.1 Scrape targets de Prometheus (desde dentro del container)"
+cmd "docker compose exec prometheus wget -q -O - http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '\\"health\\":\\"[a-z]*\\"' | sort | uniq -c || echo '  (consultando...) '"
+PROM_TARGETS=$(docker compose exec prometheus wget -q -O - http://localhost:9090/api/v1/targets 2>/dev/null)
+if [ -n "$PROM_TARGETS" ]; then
+	TARGETS_UP=$(echo "$PROM_TARGETS" | grep -o '"health":"up"' | wc -l)
+	TARGETS_DOWN=$(echo "$PROM_TARGETS" | grep -o '"health":"down"' | wc -l)
+	docker compose exec prometheus wget -q -O - http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '"job":"[^"]*"' | head -10
 	ok "Prometheus: $TARGETS_UP targets UP, $TARGETS_DOWN DOWN"
 else
-	warn "Prometheus no responde en :9090"
+	warn "Prometheus no responde desde adentro"
 fi
 
-step "8.2 Exporters activos"
-for EXPORTER in "postgres-exporter:9187" "redis-exporter:9121"; do
-	NAME="${EXPORTER%:*}"
-	PORT="${EXPORTER#*:}"
-	if curl -s -o /dev/null -w "%{http_code}" http://$NAME:$PORT/metrics 2>/dev/null | grep -q 200; then
-		ok "$NAME responde en puerto $PORT"
+echo -e "\n  ${BOLD}Targets scrapeados por Prometheus:${NC}"
+echo -e "  prometheus (self), postgres_exporter, redis_exporter, cadvisor, node_exporter"
+
+step "8.2 Exporters activos (verificados por healthcheck)"
+for SERVICE in postgres-exporter redis-exporter cadvisor node-exporter; do
+	if docker compose ps "$SERVICE" 2>/dev/null | grep -q "healthy"; then
+		ok "$SERVICE (healthcheck: healthy)"
+	elif docker compose ps "$SERVICE" 2>/dev/null | grep -q "Up"; then
+		warn "$SERVICE (Up, sin healthcheck)"
 	else
-		warn "$NAME no responde aún"
+		warn "$SERVICE no está Up"
 	fi
 done
 
