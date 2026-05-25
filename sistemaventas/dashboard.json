@@ -156,21 +156,7 @@
             },
             "inspect": false
           },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "green",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -178,13 +164,37 @@
                 "color": "green"
               },
               {
+                "color": "orange",
+                "value": 30
+              },
+              {
                 "color": "red",
-                "value": 15
+                "value": 60
               }
             ]
-          }
+          },
+          "unit": "s"
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Container"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 280
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -208,13 +218,13 @@
                 "value": [
                   {
                     "options": {
-                      "0": {
-                        "color": "red",
-                        "text": "DOWN"
-                      },
-                      "1": {
+                      "true": {
                         "color": "green",
                         "text": "UP"
+                      },
+                      "false": {
+                        "color": "red",
+                        "text": "DOWN"
                       }
                     },
                     "type": "value"
@@ -231,7 +241,7 @@
                     },
                     {
                       "color": "red",
-                      "value": 15
+                      "value": 1
                     }
                   ]
                 }
@@ -241,12 +251,16 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Container"
+              "options": "Age"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 250
+                "value": 80
+              },
+              {
+                "id": "unit",
+                "value": "s"
               }
             ]
           }
@@ -285,14 +299,14 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "time() - container_last_seen{name=~\"dockerproyect-.*\"} > 0",
+          "expr": "time() - container_last_seen{name=~\"dockerproyect-.*\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
           "refId": "A"
         }
       ],
-      "title": "Container Status (cAdvisor)",
+      "title": "Containers",
       "transformations": [
         {
           "id": "organize",
@@ -307,9 +321,21 @@
             },
             "indexByName": {},
             "renameByName": {
-              "Value": "Status",
+              "Value": "Age",
               "name": "Container"
             }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Status",
+            "binary": {
+              "left": "Age",
+              "operator": "<",
+              "right": "30"
+            },
+            "mode": "binary"
           }
         }
       ],
