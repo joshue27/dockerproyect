@@ -1,12 +1,14 @@
 #!/bin/sh -e
 #
 # Fixed entrypoint for linuxcrafts/samba-ad-dc
-# Changes from upstream:
-#   1. provision_domain() muestra errores (saca >/dev/null 2>&1)
-#   2. setting_dns() muestra errores
-#   3. Trap para mostrar exit code antes de salir
-#   4. DNS_FORWARDER vacío con quote-safe
-#   5. Host-IP explícito en provision
+# Fixes vs upstream:
+#   1. provision_domain() muestra errores (saca >/dev/null 2>&1 + -q -d0)
+#   2. --host-ip con la IP correcta (primera IP, ignora multi-red)
+#   3. CONTAINER_IP extraída con awk para evitar multi-IP en resolv.conf
+#   4. Verifica sam.ldb (no solo secrets.tdb) para detectar stale data
+#   5. Limpia datos stale automáticamente antes de reprovisionar
+#   6. Trap con exit code y línea
+#   7. DNS_FORWARDER vacío con quote-safe
 #
 # MIT License https://opensource.org/licenses/MIT
 # Copyright (c) LinuxCrafts <craftslinux@gmail.com>
@@ -72,11 +74,12 @@ write_smb_conf() {
 }
 
 
-# Provisioning Samba4 AD DC  — FIX: ya no oculta errores
+# Provisioning Samba4 AD DC  — FIX: ya no oculta errores, usa primera IP
 provision_domain() {
     touch /tmp/smb.conf
 
-    HOST_IP=$(hostname -i 2>/dev/null || echo "")
+    # FIX: tomar solo la primera IP (multi-red: identity_net + edge_net)
+    HOST_IP=$(hostname -i 2>/dev/null | awk '{print $1}' || echo "")
 
     echo "[FIXED-ENTRYPOINT] Provisioning with:"
     echo "  REALM=${REALM}"
@@ -87,7 +90,6 @@ provision_domain() {
     echo "  HOST_IP=${HOST_IP}"
     echo ""
 
-    # Intentar primero con host-ip si está disponible
     if [ -n "${HOST_IP}" ]; then
         samba-tool domain provision \
             --use-rfc2307 \
@@ -119,9 +121,14 @@ provision_domain() {
 }
 
 
-# Provisioning DNS reverse zone — FIX: ya no oculta errores
+# Provisioning DNS reverse zone — FIX: usa primera IP de contenedor
 setting_dns() {
-    DNS_REVERSE_ZONE=${DNS_REVERSE_ZONE:=$(hostname -i | awk -F. '{print $3"."$2"."$1".in-addr.arpa"}')}
+    # FIX: hostname -i puede devolver multiples IPs
+    CONTAINER_IP=$(hostname -i 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+    CONTAINER_IP_OCTETS=$(echo "${CONTAINER_IP}" | awk -F. '{print $1"."$2"."$3}')
+    CONTAINER_IP_LAST=$(echo "${CONTAINER_IP}" | awk -F. '{print $4}')
+
+    DNS_REVERSE_ZONE=${DNS_REVERSE_ZONE:=$(echo "${CONTAINER_IP_OCTETS}" | awk -F. '{print $3"."$2"."$1".in-addr.arpa"}')}
 
     echo "[FIXED-ENTRYPOINT] Creating reverse DNS zone: ${DNS_REVERSE_ZONE}"
     samba-tool dns zonecreate \
@@ -130,7 +137,7 @@ setting_dns() {
 
     samba-tool dns add \
         ${HOSTNAME}.${DNS_DOMAIN} ${DNS_REVERSE_ZONE} \
-        $(hostname -i | awk -F. '{print $4}') PTR ${HOSTNAME}.${DNS_DOMAIN} \
+        "${CONTAINER_IP_LAST}" PTR ${HOSTNAME}.${DNS_DOMAIN} \
         -U administrator --password="${ADMIN_PASSWORD}" 2>&1
 
     # Disabling WPAD and ISATAP DNS records for security reasons
@@ -151,19 +158,22 @@ setup() {
     mkdir -p -m 0750 /ntp_signd
     chmod 0750 /ntp_signd
 
+    # FIX: hostname -i puede devolver "10.100.0.10 172.23.0.3" (multi-red)
+    CONTAINER_IP=$(hostname -i 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+
     # Check hostname resolution
     echo "[FIXED-ENTRYPOINT] Hostname: $(hostname)"
     echo "[FIXED-ENTRYPOINT] Hostname -f: $(hostname -f 2>/dev/null || echo '(not available)')"
-    echo "[FIXED-ENTRYPOINT] Hostname -i: $(hostname -i 2>/dev/null || echo '(not available)')"
+    echo "[FIXED-ENTRYPOINT] Container IP: ${CONTAINER_IP}"
     echo "[FIXED-ENTRYPOINT] /etc/hosts:"
     cat /etc/hosts 2>/dev/null || echo "  (no /etc/hosts)"
 
-    # Adding localhost to resolv.conf
+    # Adding localhost to resolv.conf  — FIX: usa CONTAINER_IP con 1 sola IP
     echo -n "Regenerating resolv.conf ... "
 
     echo "search ${DNS_DOMAIN}" > /etc/resolv.conf
     echo "nameserver 127.0.0.1" >> /etc/resolv.conf
-    echo "nameserver $(hostname -i)" >> /etc/resolv.conf
+    echo "nameserver ${CONTAINER_IP}" >> /etc/resolv.conf
     if [ -n "$DNS_FORWARDER" ]; then
         echo "nameserver ${DNS_FORWARDER}" >> /etc/resolv.conf
     fi
@@ -179,16 +189,19 @@ setup() {
         echo "done"
     fi
 
-    # FIX: Check for COMPLETE provisioning, not just secrets.tdb
-    if [ ! -e /samba/private/secrets.tdb ] || [ ! -e /samba/etc/smb.conf ]; then
+    # FIX: Verificar provisioning COMPLETO (secrets.tdb + sam.ldb)
+    # secrets.tdb solo = stale/corrupto de intento anterior
+    if [ -e /samba/private/secrets.tdb ] && [ -e /samba/private/sam.ldb ] && [ -e /samba/etc/smb.conf ]; then
+        echo "[FIXED-ENTRYPOINT] Samba already provisioned (secrets.tdb + sam.ldb + smb.conf found)"
+    else
         if [ -e /samba/private/secrets.tdb ]; then
-            echo "[FIXED-ENTRYPOINT] WARNING: secrets.tdb exists but smb.conf missing — re-provisioning"
+            echo "[FIXED-ENTRYPOINT] WARNING: secrets.tdb exists but sam.ldb missing — stale data"
+            echo "[FIXED-ENTRYPOINT] Limpiando datos stale antes de reprovisionar..."
+            rm -rf /samba/private/* /samba/etc/smb.conf.d/00-domain.conf 2>/dev/null || true
         fi
         echo "Provisioning Samba Domain ..."
         provision_domain
         echo "Provision Completed."
-    else
-        echo "[FIXED-ENTRYPOINT] Samba already provisioned (secrets.tdb + smb.conf found)"
     fi
 
     # Provision DNS reverse zone
