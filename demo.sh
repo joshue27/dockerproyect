@@ -153,15 +153,12 @@ cmd "docker compose exec postgres-primary psql -U postgres -d sistemaventas -c '
 docker compose exec postgres-primary psql -U postgres -d sistemaventas -c '\dt app.*' 2>/dev/null || warn "Tablas no encontradas (puede faltar el schema app)"
 
 step "4.2 Contar productos en inventario"
-cmd "docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM app.productos;'"
-docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM app.productos;' 2>/dev/null ||
-	docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM products;' 2>/dev/null ||
-	warn "No se pudo consultar productos"
+cmd "docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM app.products;'"
+docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM app.products;'
 
 step "4.3 Ver los primeros 5 productos"
-cmd "docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.productos ORDER BY id LIMIT 5;'"
-docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.productos ORDER BY id LIMIT 5;' 2>/dev/null ||
-	docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM products ORDER BY id LIMIT 5;'
+cmd "docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.products ORDER BY id LIMIT 5;'"
+docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.products ORDER BY id LIMIT 5;'
 
 step "4.4 Estado de la replicación (streaming)"
 cmd "docker compose exec postgres-primary psql -U postgres -c \"SELECT client_addr, state, sync_state FROM pg_stat_replication;\""
