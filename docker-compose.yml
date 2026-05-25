@@ -299,6 +299,7 @@ services:
       - ./backups/rclone-sync.sh:/scripts/rclone-sync.sh:ro
     networks:
       - data_net
+      - edge_net  # necesita internet para Google APIs
 
   prometheus:
     image: prom/prometheus:latest
