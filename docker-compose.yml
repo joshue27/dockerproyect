@@ -19,7 +19,8 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - "${HOST_TLS_DIR:-/srv/sistemaventas/tls}:/etc/nginx/certs:ro"
     healthcheck:
-      test: ["CMD-SHELL", "ps | grep -v grep | grep -q 'nginx: master' || exit 1"]
+      test:
+        ["CMD-SHELL", "ps | grep -v grep | grep -q 'nginx: master' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -132,6 +133,8 @@ services:
       DNS_BACKEND: SAMBA_INTERNAL
       FUNCTION_LEVEL: 2008_R2
       SAMBA_OPTIONS: "--debuglevel=2"
+      # Para que samba-tool desde 'docker compose exec' encuentre la config
+      SAMBACONF: /samba/etc/smb.conf
     volumes:
       - samba_data:/samba
       - samba_users:/users
@@ -195,7 +198,11 @@ services:
       - ./database/postgres/primary/init/02_replication_user.sh:/docker-entrypoint-initdb.d/02_replication_user.sh:ro
       - ./database/postgres/primary/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sistemaventas}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sistemaventas}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -224,7 +231,11 @@ services:
       - postgres_replica_data:/var/lib/postgresql/data
       - ./database/postgres/replica/replica-entrypoint.sh:/scripts/replica-entrypoint.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sistemaventas}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sistemaventas}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -319,7 +330,15 @@ services:
       - grafana_data:/var/lib/grafana
       - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:3000/api/health",
+        ]
       interval: 15s
       timeout: 5s
       retries: 10

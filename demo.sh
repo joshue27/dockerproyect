@@ -10,14 +10,21 @@ set -e
 RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' BOLD='\033[1m' NC='\033[0m'
 IP=$(hostname -I | awk '{print $1}')
 
-ok()   { echo -e "  ${GREEN}✓${NC} $*"; }
+ok() { echo -e "  ${GREEN}✓${NC} $*"; }
 warn() { echo -e "  ${YELLOW}⚠${NC} $*"; }
 fail() { echo -e "  ${RED}✗${NC} $*"; }
 
-banner() { echo -e "\n${CYAN}${BOLD}═══════════════════════════════════════════════════════════════${NC}"; echo -e "${CYAN}${BOLD}  $*${NC}"; echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════════════${NC}"; }
-step()  { echo -e "\n${GREEN}▶${NC} $*"; }
-cmd()   { echo -e "  ${BOLD}\$ $*${NC}"; }
-pause() { echo -e "\n${CYAN}⏸  Presione ENTER para continuar...${NC}"; read -r; }
+banner() {
+	echo -e "\n${CYAN}${BOLD}═══════════════════════════════════════════════════════════════${NC}"
+	echo -e "${CYAN}${BOLD}  $*${NC}"
+	echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════════════${NC}"
+}
+step() { echo -e "\n${GREEN}▶${NC} $*"; }
+cmd() { echo -e "  ${BOLD}\$ $*${NC}"; }
+pause() {
+	echo -e "\n${CYAN}⏸  Presione ENTER para continuar...${NC}"
+	read -r
+}
 
 clear
 echo ""
@@ -62,19 +69,19 @@ banner "PARTE 2 — SEGURIDAD MULTICAPA"
 
 step "2.1 Certificados TLS (HTTPS activo)"
 if [ -d /srv/sistemaventas/tls ]; then
-  cmd "ls -la /srv/sistemaventas/tls/"
-  ls -la /srv/sistemaventas/tls/
-  ok "Certificados TLS encontrados"
+	cmd "ls -la /srv/sistemaventas/tls/"
+	ls -la /srv/sistemaventas/tls/
+	ok "Certificados TLS encontrados"
 else
-  warn "Directorio TLS no encontrado — HTTPS puede no estar configurado"
+	warn "Directorio TLS no encontrado — HTTPS puede no estar configurado"
 fi
 
 step "2.2 Verificar HTTPS funcionando"
 cmd "curl -k -I https://localhost:8443 2>&1 | head -5"
 if curl -k -s -o /dev/null -w "%{http_code}" https://localhost:8443 2>/dev/null | grep -q "200\|302\|301"; then
-  ok "HTTPS responde correctamente"
+	ok "HTTPS responde correctamente"
 else
-  warn "HTTPS no responde aún (puede estar en inicio)"
+	warn "HTTPS no responde aún (puede estar en inicio)"
 fi
 
 step "2.3 Firewall UFW — solo puertos autorizados"
@@ -83,9 +90,9 @@ sudo ufw status numbered 2>/dev/null || warn "UFW puede no estar instalado"
 
 step "2.4 Fail2Ban protegiendo SSH"
 if sudo fail2ban-client status sshd 2>/dev/null; then
-  ok "Fail2Ban activo en SSH"
+	ok "Fail2Ban activo en SSH"
 else
-  warn "Fail2Ban no configurado o no instalado"
+	warn "Fail2Ban no configurado o no instalado"
 fi
 
 pause
@@ -96,27 +103,27 @@ pause
 banner "PARTE 3 — IDENTIDAD: ACTIVE DIRECTORY (SAMBA AD DC)"
 
 step "3.1 Verificar controlador de dominio — nivel funcional"
-cmd "docker compose exec samba-ad-dc samba-tool domain level show"
-docker compose exec samba-ad-dc samba-tool domain level show
+cmd "docker compose exec samba-ad-dc samba-tool domain level show -s /samba/etc/smb.conf"
+docker compose exec samba-ad-dc samba-tool domain level show -s /samba/etc/smb.conf
 ok "Domain controller funcionando"
 
 pause
 
 step "3.2 Listar usuarios del dominio (por defecto: Administrator + krbtgt)"
-cmd "docker compose exec samba-ad-dc samba-tool user list"
-docker compose exec samba-ad-dc samba-tool user list
+cmd "docker compose exec samba-ad-dc samba-tool user list -s /samba/etc/smb.conf"
+docker compose exec samba-ad-dc samba-tool user list -s /samba/etc/smb.conf
 
 pause
 
 step "3.3 CREAR usuario en el dominio: vendedor2"
 echo -e "  ${CYAN}Creando: vendedor2 / Venta2026!${NC}"
-cmd "docker compose exec samba-ad-dc samba-tool user create vendedor2 Venta2026! --given-name=Vendedor --surname=Dos"
-docker compose exec samba-ad-dc samba-tool user create vendedor2 Venta2026! --given-name=Vendedor --surname=Dos
+cmd "docker compose exec samba-ad-dc samba-tool user create vendedor2 Venta2026! --given-name=Vendedor --surname=Dos -s /samba/etc/smb.conf"
+docker compose exec samba-ad-dc samba-tool user create vendedor2 Venta2026! --given-name=Vendedor --surname=Dos -s /samba/etc/smb.conf
 ok "Usuario vendedor2 creado en el dominio"
 
 step "3.4 Verificar que el usuario aparece en el listado"
-cmd "docker compose exec samba-ad-dc samba-tool user list"
-docker compose exec samba-ad-dc samba-tool user list
+cmd "docker compose exec samba-ad-dc samba-tool user list -s /samba/etc/smb.conf"
+docker compose exec samba-ad-dc samba-tool user list -s /samba/etc/smb.conf
 
 pause
 
@@ -147,23 +154,23 @@ docker compose exec postgres-primary psql -U postgres -d sistemaventas -c '\dt a
 
 step "4.2 Contar productos en inventario"
 cmd "docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM app.productos;'"
-docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM app.productos;' 2>/dev/null || \
-  docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM products;' 2>/dev/null || \
-  warn "No se pudo consultar productos"
+docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM app.productos;' 2>/dev/null ||
+	docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT count(*) AS total_productos FROM products;' 2>/dev/null ||
+	warn "No se pudo consultar productos"
 
 step "4.3 Ver los primeros 5 productos"
 cmd "docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.productos ORDER BY id LIMIT 5;'"
-docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.productos ORDER BY id LIMIT 5;' 2>/dev/null || \
-  docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM products ORDER BY id LIMIT 5;'
+docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM app.productos ORDER BY id LIMIT 5;' 2>/dev/null ||
+	docker compose exec postgres-primary psql -U postgres -d sistemaventas -c 'SELECT id, name, stock, price FROM products ORDER BY id LIMIT 5;'
 
 step "4.4 Estado de la replicación (streaming)"
 cmd "docker compose exec postgres-primary psql -U postgres -c \"SELECT client_addr, state, sync_state FROM pg_stat_replication;\""
 REPL_COUNT=$(docker compose exec postgres-primary psql -U postgres -t -c "SELECT count(*) FROM pg_stat_replication;" 2>/dev/null | tr -d ' ')
 if [ "$REPL_COUNT" -gt 0 ] 2>/dev/null; then
-  docker compose exec postgres-primary psql -U postgres -c "SELECT client_addr, state, sync_state FROM pg_stat_replication;"
-  ok "Replicación activa"
+	docker compose exec postgres-primary psql -U postgres -c "SELECT client_addr, state, sync_state FROM pg_stat_replication;"
+	ok "Replicación activa"
 else
-  warn "No hay réplicas conectadas aún (puede estar en inicio)"
+	warn "No hay réplicas conectadas aún (puede estar en inicio)"
 fi
 
 step "4.5 Verificar que la réplica está sincronizada"
@@ -212,10 +219,10 @@ step "6.2 Claves de sesión activas en Redis"
 cmd "docker compose exec redis redis-cli KEYS 'sistemaventas:sess:*'"
 SESSION_COUNT=$(docker compose exec redis redis-cli KEYS 'sistemaventas:sess:*' 2>/dev/null | wc -l)
 if [ "$SESSION_COUNT" -gt 0 ]; then
-  docker compose exec redis redis-cli KEYS 'sistemaventas:sess:*'
-  ok "Sesiones activas: $SESSION_COUNT"
+	docker compose exec redis redis-cli KEYS 'sistemaventas:sess:*'
+	ok "Sesiones activas: $SESSION_COUNT"
 else
-  warn "Sin sesiones activas (inicie sesión en la app primero)"
+	warn "Sin sesiones activas (inicie sesión en la app primero)"
 fi
 
 step "6.3 Redis info general"
@@ -232,10 +239,10 @@ banner "PARTE 7 — BACKUPS AUTOMÁTICOS"
 step "7.1 Backups de base de datos generados automáticamente"
 cmd "ls -lh /srv/sistemaventas/backups/db/ 2>/dev/null | tail -5"
 if [ -d /srv/sistemaventas/backups/db ] && [ "$(ls -A /srv/sistemaventas/backups/db 2>/dev/null)" ]; then
-  ls -lh /srv/sistemaventas/backups/db/ | tail -5
-  ok "Backups encontrados"
+	ls -lh /srv/sistemaventas/backups/db/ | tail -5
+	ok "Backups encontrados"
 else
-  warn "No hay backups aún (se generan cada 6h)"
+	warn "No hay backups aún (se generan cada 6h)"
 fi
 
 step "7.2 Forzar un backup manual AHORA"
@@ -271,22 +278,22 @@ echo ""
 step "8.1 Scrape targets de Prometheus"
 cmd "curl -s http://localhost:9090/api/v1/targets | python3 -m json.tool 2>/dev/null | grep -E 'job|health' | head -20 || curl -s http://localhost:9090/api/v1/targets 2>/dev/null | head -5 || echo '  (Prometheus no responde) '"
 if curl -s -o /dev/null -w "%{http_code}" http://localhost:9090 2>/dev/null | grep -q 200; then
-  TARGETS_UP=$(curl -s http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '"health":"up"' | wc -l)
-  TARGETS_DOWN=$(curl -s http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '"health":"down"' | wc -l)
-  ok "Prometheus: $TARGETS_UP targets UP, $TARGETS_DOWN DOWN"
+	TARGETS_UP=$(curl -s http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '"health":"up"' | wc -l)
+	TARGETS_DOWN=$(curl -s http://localhost:9090/api/v1/targets 2>/dev/null | grep -o '"health":"down"' | wc -l)
+	ok "Prometheus: $TARGETS_UP targets UP, $TARGETS_DOWN DOWN"
 else
-  warn "Prometheus no responde en :9090"
+	warn "Prometheus no responde en :9090"
 fi
 
 step "8.2 Exporters activos"
 for EXPORTER in "postgres-exporter:9187" "redis-exporter:9121"; do
-  NAME="${EXPORTER%:*}"
-  PORT="${EXPORTER#*:}"
-  if curl -s -o /dev/null -w "%{http_code}" http://$NAME:$PORT/metrics 2>/dev/null | grep -q 200; then
-    ok "$NAME responde en puerto $PORT"
-  else
-    warn "$NAME no responde aún"
-  fi
+	NAME="${EXPORTER%:*}"
+	PORT="${EXPORTER#*:}"
+	if curl -s -o /dev/null -w "%{http_code}" http://$NAME:$PORT/metrics 2>/dev/null | grep -q 200; then
+		ok "$NAME responde en puerto $PORT"
+	else
+		warn "$NAME no responde aún"
+	fi
 done
 
 pause
@@ -309,9 +316,9 @@ step "9.3 Verificar que la app sigue respondiendo"
 cmd "curl -s -o /dev/null -w 'HTTP Status: %{http_code}\n' http://localhost:8080/health"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health 2>/dev/null)
 if [ "$HTTP_CODE" = "200" ]; then
-  ok "App respondiendo (HTTP $HTTP_CODE) — app2 absorbió el tráfico"
+	ok "App respondiendo (HTTP $HTTP_CODE) — app2 absorbió el tráfico"
 else
-  warn "Código de respuesta: $HTTP_CODE"
+	warn "Código de respuesta: $HTTP_CODE"
 fi
 
 step "9.4 En Grafana: Stack Health debe mostrar app1 en rojo"
