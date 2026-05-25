@@ -77,7 +77,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
+        "h": 7,
         "w": 4,
         "x": 0,
         "y": 1
@@ -149,13 +149,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -173,73 +166,33 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "s",
+          "min": 0,
+          "max": 120
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Container"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 300
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Age"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "custom.width",
-                "value": 100
-              },
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "displayName",
-                "value": "Last Seen"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 5,
+        "h": 7,
+        "w": 7,
+        "x": 4,
         "y": 1
       },
       "id": 102,
       "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
           ],
-          "show": false
+          "fields": "",
+          "values": false
         },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": false,
-            "displayName": "Container"
-          }
-        ]
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -250,36 +203,12 @@
           },
           "editorMode": "code",
           "expr": "time() - container_last_seen{name=~\".+\"}",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "__auto",
+          "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
       "title": "Containers",
-      "transformations": [
-        {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "name",
-                "Value"
-              ]
-            }
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "renameByName": {
-              "Value": "Age",
-              "name": "Container"
-            }
-          }
-        }
-      ],
-      "type": "table"
+      "type": "bargauge"
     },
     {
       "datasource": {
@@ -305,9 +234,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
+        "h": 7,
         "w": 3,
-        "x": 12,
+        "x": 11,
         "y": 1
       },
       "id": 103,
@@ -369,9 +298,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
+        "h": 7,
         "w": 2,
-        "x": 15,
+        "x": 14,
         "y": 1
       },
       "id": 104,
@@ -450,9 +379,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 7,
-        "x": 17,
+        "h": 7,
+        "w": 8,
+        "x": 16,
         "y": 1
       },
       "id": 105,
