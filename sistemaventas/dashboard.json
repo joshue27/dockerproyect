@@ -202,7 +202,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "max by (name) (time() - container_last_seen{name=~\".+\"})",
+          "expr": "max by (name) (time() - container_last_seen{container_label_com_docker_compose_project=\"dockerproyect\"})",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -441,7 +441,7 @@
       },
       "id": 600,
       "panels": [],
-      "title": "Host / VM — CPU, RAM, Disk, Network (node_exporter)",
+      "title": "Host / VM \u2014 CPU, RAM, Disk, Network (node_exporter)",
       "type": "row"
     },
     {
@@ -1167,7 +1167,7 @@
       },
       "id": 500,
       "panels": [],
-      "title": "Containers — CPU & Memory (cAdvisor)",
+      "title": "Containers \u2014 CPU & Memory (cAdvisor)",
       "type": "row"
     },
     {
@@ -1420,7 +1420,7 @@
       },
       "id": 200,
       "panels": [],
-      "title": "PostgreSQL — Database Performance",
+      "title": "PostgreSQL \u2014 Database Performance",
       "type": "row"
     },
     {
@@ -1882,7 +1882,7 @@
       },
       "id": 300,
       "panels": [],
-      "title": "Redis — Cache & Sessions",
+      "title": "Redis \u2014 Cache & Sessions",
       "type": "row"
     },
     {
@@ -2478,7 +2478,7 @@
       },
       "id": 400,
       "panels": [],
-      "title": "Logs — Loki Explorer",
+      "title": "Logs \u2014 Loki Explorer",
       "type": "row"
     },
     {
@@ -2545,7 +2545,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Sistema de Ventas — Stack Overview",
+  "title": "Sistema de Ventas \u2014 Stack Overview",
   "uid": "sistemaventas-stack",
   "version": 17
 }
