@@ -202,7 +202,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "time() - container_last_seen{name=~\".+\"}",
+          "expr": "max by (name) (time() - container_last_seen{name=~\".+\"})",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
