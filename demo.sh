@@ -268,7 +268,7 @@ echo -e "    Password: ${GREEN}admin123${NC}"
 echo ""
 echo -e "  ${BOLD}Si el dashboard no está importado:${NC}"
 echo -e "    1. Menú → Dashboards → Import"
-echo -e "    2. Pegar el JSON del archivo dockerproyect-dashboard.json"
+echo -e "    2. Copiar y pegar el JSON del archivo sistemaventas/dashboard.json"
 echo -e "    3. Seleccionar datasource Prometheus y Loki"
 echo ""
 
