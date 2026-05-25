@@ -1,0 +1,11 @@
+This directory is intended to contain local settings overrides.
+
+Though shipped settings in /samba/etc/smb.conf can still be modified by an
+administrator, it's recommended for additions or the occasional override, to
+adjust them here, to prevent future updates from interfering with local
+modifications.
+
+Keep in mind that all shares should use numbers above 90, for example
+91-homes.conf, 92-printers.conf, 93-users-profiles.conf.
+
+Some configuration are provided as examples, you can start by modifying them.

@@ -1,0 +1,7 @@
+# User home directories
+[homes]
+    read only = no
+    browsable = no
+    guest ok = no
+    create mask = 0700
+    directory mask = 0700

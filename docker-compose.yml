@@ -110,7 +110,9 @@ services:
       - observability_net
 
   samba-ad-dc:
-    image: linuxcrafts/samba-ad-dc:latest
+    build:
+      context: ./samba
+    image: sistemaventas-samba:local
     hostname: ${SAMBA_NETBIOS_NAME:-DC01}
     restart: unless-stopped
     privileged: true
@@ -118,6 +120,8 @@ services:
       - SYS_ADMIN
       - SYS_RESOURCE
       - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
     environment:
       DNS_DOMAIN: ${SAMBA_DOMAIN:-proyecto.local}
       DNS_FORWARDER: ${SAMBA_DNS_FORWARDER:-1.1.1.1}
@@ -131,9 +135,12 @@ services:
     volumes:
       - samba_data:/samba
       - samba_users:/users
+    extra_hosts:
+      - "${SAMBA_NETBIOS_NAME:-DC01}.${SAMBA_DOMAIN:-proyecto.local}:${SAMBA_HOST_IP:-172.20.0.10}"
     networks:
-      - edge_net
-      - identity_net
+      edge_net:
+      identity_net:
+        ipv4_address: ${SAMBA_HOST_IP:-172.20.0.10}
     ports:
       - "53:53/tcp"
       - "53:53/udp"
@@ -428,6 +435,9 @@ networks:
   identity_net:
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: ${SAMBA_NET_SUBNET:-172.20.0.0/24}
   admin_net:
     driver: bridge
     internal: true

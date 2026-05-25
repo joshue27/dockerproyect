@@ -1,0 +1,10 @@
+# Roaming profiles
+[profiles]
+    path = /users/profiles
+    read only = no
+    browsable = no
+    guest ok = no
+    create mask = 0600
+    directory mask = 0700
+    csc policy = disable
+    profile acls = yes

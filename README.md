@@ -54,7 +54,7 @@ Levantá el stack 5-10 minutos antes de la demo, dejá que estabilice, y mostrá
 | **redis** | `redis:7-alpine` | Session store (`connect-redis`). Persistencia AOF |
 | **postgres-primary** | `postgres:17-alpine` | PostgreSQL con `wal_level=replica`, 10 replication slots |
 | **postgres-replica** | `postgres:17-alpine` | Réplica streaming. Hot standby |
-| **samba-ad-dc** | `linuxcrafts/samba-ad-dc` | Active Directory Domain Controller (DNS, Kerberos, LDAP, SMB) |
+| **samba-ad-dc** | `sistemaventas-samba:local` (build local) | Active Directory Domain Controller con entrypoint fixeado (debug provisioning) |
 | **backup-db-service** | `postgres:17-alpine` | Backup automático de BD cada 6h. Retención 7 días |
 | **backup-files-service** | `alpine:3.20` | Backup de archivos de la app. Misma frecuencia y retención |
 | **rclone-sync** | `rclone/rclone` | Sincronización cloud de backups (Google Drive por defecto) |
@@ -147,6 +147,8 @@ dockerproyect/
 | `REPLICATION_PASSWORD` | `replicator123` | **Cambiar** — contraseña de replicación |
 | `SESSION_SECRET` | `demo-session-secret` | **Cambiar** — secreto de sesiones Express |
 | `SAMBA_DOMAIN` | `proyecto.local` | Dominio del AD |
+| `SAMBA_HOST_IP` | `172.20.0.10` | IP estática del contenedor Samba en identity_net |
+| `SAMBA_NET_SUBNET` | `172.20.0.0/24` | Subred de identity_net |
 | `SAMBA_ADMIN_PASSWORD` | `Admin123!` | **Cambiar** — contraseña del Administrator de AD |
 | `GRAFANA_ADMIN_PASSWORD` | `admin123` | **Cambiar** — contraseña de Grafana |
 | `DB_BACKUP_INTERVAL_SECONDS` | `21600` | Frecuencia de backup de BD (6h) |

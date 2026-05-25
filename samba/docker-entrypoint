@@ -1,0 +1,260 @@
+#!/bin/sh -e
+#
+# Fixed entrypoint for linuxcrafts/samba-ad-dc
+# Changes from upstream:
+#   1. provision_domain() muestra errores (saca >/dev/null 2>&1)
+#   2. setting_dns() muestra errores
+#   3. Trap para mostrar exit code antes de salir
+#   4. DNS_FORWARDER vacío con quote-safe
+#   5. Host-IP explícito en provision
+#
+# MIT License https://opensource.org/licenses/MIT
+# Copyright (c) LinuxCrafts <craftslinux@gmail.com>
+# Mantainer: Harol Hunter <hhuntercu.devops@gmail.com>
+# Fixes: dockerproyect
+
+
+######################### TRAP #######################
+
+error_trap() {
+  EXIT_CODE=$?
+  echo "[FIXED-ENTRYPOINT] ERROR: script exited with code ${EXIT_CODE} at line ${BASH_LINENO[0]:-unknown}" >&2
+  echo "[FIXED-ENTRYPOINT] Last command: ${BASH_COMMAND:-unknown}" >&2
+}
+trap error_trap EXIT
+
+######################### DEFINITIONS #######################
+
+# Setting ENV variables
+DOMAIN_CONFIG_FILE="/samba/etc/smb.conf.d/00-domain.conf"
+SAMBA_CONFIG_FILE="/samba/etc/smb.conf"
+DNS_DOMAIN=${DNS_DOMAIN:=$(hostname -d)}
+DNS_DOMAIN=${DNS_DOMAIN:=$(grep search /etc/resolv.conf | cut -f2 -d" ")}
+DNS_DOMAIN=${DNS_DOMAIN:=$(echo ${REALM} | cut -f1 -d. | tr a-z A-Z)}
+DNS_DOMAIN=${DNS_DOMAIN:=$(grep realm $DOMAIN_CONFIG_FILE | cut -f2 -d"=" | tr A-Z a-z)}
+DNS_DOMAIN=${DNS_DOMAIN:="my.company.tld"}
+DNS_FORWARDER=${DNS_FORWARDER:=$(grep nameserver /etc/resolv.conf | cut -f2 -d" ")}
+WORKGROUP=${WORKGROUP:=$(echo ${DNS_DOMAIN} | cut -f1 -d. | tr a-z A-Z)}
+REALM=${REALM:=$(echo ${DNS_DOMAIN} | tr a-z A-Z)}
+NETBIOS_NAME=${NETBIOS_NAME:=$(echo ${HOSTNAME} | tr a-z A-Z)}
+DNS_BACKEND=${DNS_BACKEND:="SAMBA_INTERNAL"}
+FUNCTION_LEVEL=${FUNCTION_LEVEL:="2008_R2"}
+ROLE=${ROLE:="dc"}
+BACKEND_STORE=${BACKEND_STORE:="tdb"}
+ENABLE_ROAMING_PROFILES=${ENABLE_ROAMING_PROFILES:=false}
+
+# FIX: quote-safe check para DNS_FORWARDER vacío
+if [ "${DNS_FORWARDER}" = "127.0.0.1" ]; then
+    DNS_FORWARDER=""
+fi
+
+
+# Filling smb.conf
+write_smb_conf() {
+    echo "workgroup = ${WORKGROUP}" > $DOMAIN_CONFIG_FILE
+    echo "realm = ${REALM}" >> $DOMAIN_CONFIG_FILE
+    echo "netbios name = ${NETBIOS_NAME}" >> $DOMAIN_CONFIG_FILE
+
+    if [ "${DNS_FORWARDER}" != "" ] && [ "${DNS_FORWARDER}" != "127.0.0.1" ]; then
+        echo "dns forwarder = ${DNS_FORWARDER}" >> $DOMAIN_CONFIG_FILE
+    fi
+
+    if [ "${ENABLE_ROAMING_PROFILES}" = "true" ]; then
+        mkdir -p -m 2750 /users/
+        chmod 2750 /users/
+        mv /samba/etc/smb.conf.d/93-users-profiles.conf.orig /samba/etc/smb.conf.d/93-users-profiles.conf 2>/dev/null || true
+    fi
+
+    rm -f /samba/etc/smb.conf.d/includes
+    for custom_conf in $(ls -1 /samba/etc/smb.conf.d/*.conf 2>/dev/null); do
+        echo "include = $custom_conf" >> /samba/etc/smb.conf.d/includes
+    done
+}
+
+
+# Provisioning Samba4 AD DC  — FIX: ya no oculta errores
+provision_domain() {
+    touch /tmp/smb.conf
+
+    HOST_IP=$(hostname -i 2>/dev/null || echo "")
+
+    echo "[FIXED-ENTRYPOINT] Provisioning with:"
+    echo "  REALM=${REALM}"
+    echo "  WORKGROUP=${WORKGROUP}"
+    echo "  NETBIOS_NAME=${NETBIOS_NAME}"
+    echo "  DNS_DOMAIN=${DNS_DOMAIN}"
+    echo "  DNS_FORWARDER=${DNS_FORWARDER}"
+    echo "  HOST_IP=${HOST_IP}"
+    echo ""
+
+    # Intentar primero con host-ip si está disponible
+    if [ -n "${HOST_IP}" ]; then
+        samba-tool domain provision \
+            --use-rfc2307 \
+            --dns-backend=${DNS_BACKEND} \
+            --domain=${WORKGROUP} \
+            --realm=${REALM} \
+            --host-name=${NETBIOS_NAME} \
+            --host-ip="${HOST_IP}" \
+            --server-role=${ROLE} \
+            --function-level=${FUNCTION_LEVEL} \
+            --configfile /tmp/smb.conf \
+            --backend-store=${BACKEND_STORE} \
+            --targetdir=/samba \
+            --adminpass=${ADMIN_PASSWORD} 2>&1
+    else
+        samba-tool domain provision \
+            --use-rfc2307 \
+            --dns-backend=${DNS_BACKEND} \
+            --domain=${WORKGROUP} \
+            --realm=${REALM} \
+            --host-name=${NETBIOS_NAME} \
+            --server-role=${ROLE} \
+            --function-level=${FUNCTION_LEVEL} \
+            --configfile /tmp/smb.conf \
+            --backend-store=${BACKEND_STORE} \
+            --targetdir=/samba \
+            --adminpass=${ADMIN_PASSWORD} 2>&1
+    fi
+}
+
+
+# Provisioning DNS reverse zone — FIX: ya no oculta errores
+setting_dns() {
+    DNS_REVERSE_ZONE=${DNS_REVERSE_ZONE:=$(hostname -i | awk -F. '{print $3"."$2"."$1".in-addr.arpa"}')}
+
+    echo "[FIXED-ENTRYPOINT] Creating reverse DNS zone: ${DNS_REVERSE_ZONE}"
+    samba-tool dns zonecreate \
+        ${HOSTNAME}.${DNS_DOMAIN} ${DNS_REVERSE_ZONE} \
+        -U administrator --password="${ADMIN_PASSWORD}" 2>&1
+
+    samba-tool dns add \
+        ${HOSTNAME}.${DNS_DOMAIN} ${DNS_REVERSE_ZONE} \
+        $(hostname -i | awk -F. '{print $4}') PTR ${HOSTNAME}.${DNS_DOMAIN} \
+        -U administrator --password="${ADMIN_PASSWORD}" 2>&1
+
+    # Disabling WPAD and ISATAP DNS records for security reasons
+    samba-tool dns add ${HOSTNAME} ${DNS_DOMAIN} wpad A 127.0.0.1 -P \
+        -U administrator --password="${ADMIN_PASSWORD}" >/dev/null 2>&1 || true
+    samba-tool dns add ${HOSTNAME} ${DNS_DOMAIN} isatap A 127.0.0.1 -P \
+        -U administrator --password="${ADMIN_PASSWORD}" >/dev/null 2>&1 || true
+}
+
+
+setup() {
+    mkdir -p /samba/log
+    mkdir -p /samba/lock
+    mkdir -p /samba/state
+    mkdir -p /samba/cache
+    mkdir -p /samba/private/tls
+    mkdir -p /bind-dns
+    mkdir -p -m 0750 /ntp_signd
+    chmod 0750 /ntp_signd
+
+    # Check hostname resolution
+    echo "[FIXED-ENTRYPOINT] Hostname: $(hostname)"
+    echo "[FIXED-ENTRYPOINT] Hostname -f: $(hostname -f 2>/dev/null || echo '(not available)')"
+    echo "[FIXED-ENTRYPOINT] Hostname -i: $(hostname -i 2>/dev/null || echo '(not available)')"
+    echo "[FIXED-ENTRYPOINT] /etc/hosts:"
+    cat /etc/hosts 2>/dev/null || echo "  (no /etc/hosts)"
+
+    # Adding localhost to resolv.conf
+    echo -n "Regenerating resolv.conf ... "
+
+    echo "search ${DNS_DOMAIN}" > /etc/resolv.conf
+    echo "nameserver 127.0.0.1" >> /etc/resolv.conf
+    echo "nameserver $(hostname -i)" >> /etc/resolv.conf
+    if [ -n "$DNS_FORWARDER" ]; then
+        echo "nameserver ${DNS_FORWARDER}" >> /etc/resolv.conf
+    fi
+
+    echo "done"
+    echo "[FIXED-ENTRYPOINT] /etc/resolv.conf:"
+    cat /etc/resolv.conf
+
+    # Write local info to smb.conf
+    if [ ! -s $DOMAIN_CONFIG_FILE ]; then
+        echo -n "Writing samba settings ... "
+        write_smb_conf
+        echo "done"
+    fi
+
+    # FIX: Check for COMPLETE provisioning, not just secrets.tdb
+    if [ ! -e /samba/private/secrets.tdb ] || [ ! -e /samba/etc/smb.conf ]; then
+        if [ -e /samba/private/secrets.tdb ]; then
+            echo "[FIXED-ENTRYPOINT] WARNING: secrets.tdb exists but smb.conf missing — re-provisioning"
+        fi
+        echo "Provisioning Samba Domain ..."
+        provision_domain
+        echo "Provision Completed."
+    else
+        echo "[FIXED-ENTRYPOINT] Samba already provisioned (secrets.tdb + smb.conf found)"
+    fi
+
+    # Provision DNS reverse zone
+    # Samba needs to be running
+    samba -D -s $SAMBA_CONFIG_FILE
+
+    # Waiting for Samba daemon
+    sleep 3s
+    REVERSE_ZONES_COUNT=$(samba-tool dns zonelist \
+        --reverse -U administrator \
+        --password="${ADMIN_PASSWORD}" 127.0.0.1 | head -n1 | cut -f3 -d" ") 2>/dev/null || REVERSE_ZONES_COUNT="0"
+    if [ "${REVERSE_ZONES_COUNT}" = "0" ]; then
+        echo -n "Provisioning DNS Reverse Zone ... "
+        setting_dns
+        echo "done"
+    fi
+    # Stopping previous instance of Samba
+    SAMBA_PID_FILE="/var/run/samba/samba.pid"
+    if [ -f "$SAMBA_PID_FILE" ]; then
+        kill $(cat "$SAMBA_PID_FILE") 2>/dev/null || true
+    fi
+}
+
+
+start() {
+    samba -i -s $SAMBA_CONFIG_FILE
+}
+
+
+debug() {
+    samba -i -s $SAMBA_CONFIG_FILE -d4
+}
+
+
+##################################################################################
+
+# Quitamos el trap para no interferir con el samba en foreground
+trap - EXIT
+
+setup
+
+# Starting samba
+echo "Starting samba daemon"
+if [ $# -eq 0 ]; then
+    start
+else
+    if [ "$1" = "-" ]; then
+        ACTION=$2
+    else
+        ACTION=$1
+    fi
+
+    case "${ACTION}" in
+        setup)
+            setup
+        ;;
+        start)
+            start
+        ;;
+        debug)
+            debug
+        ;;
+        *)
+            samba -D -s $SAMBA_CONFIG_FILE
+            exec "$@"
+        ;;
+    esac
+fi
+exit 0
